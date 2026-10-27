@@ -182,3 +182,4 @@ if __name__ == "__main__":
     opps = engine.scan_opportunities()
     for o in opps:
         print(f"{o['ticker']}: Drawdown {o['drawdown_pct']}%, Upside +{o['upside_pct']}% ({o['multiplier_x']}x), Confiança: {o['confidence_score']}%")
+
