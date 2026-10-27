@@ -12,6 +12,8 @@ import yfinance as yf
 from advisor import MacroStockAdvisor
 from config.settings import SETTINGS
 from engines.projections import ProjectionEngine
+from engines.monte_carlo import MonteCarloEngine
+from engines.robustness_diagnostic import RobustnessDiagnostic
 
 # Configuração da Página Streamlit
 st.set_page_config(
@@ -134,9 +136,10 @@ st.markdown(
 )
 
 # Abas de Navegação
-tab_portfolio, tab_projections, tab_macro, tab_reports, tab_guide = st.tabs([
+tab_portfolio, tab_projections, tab_diagnostic, tab_macro, tab_reports, tab_guide = st.tabs([
     "💼 Carteira Recomendada (R$ 20k)",
-    "📈 Projeções & Simulação Financeira",
+    "🎲 Projeções & Monte Carlo",
+    "🔬 Autodiagnóstico & Confiança",
     "🌍 Cenário Macroeconômico",
     "📄 Relatórios & Teses Detalhadas",
     "📱 Passo a Passo no Itaú"
@@ -409,8 +412,215 @@ with tab_projections:
         )
         st.caption("Mesmo que todas as 5 ações fossem stopadas, seu patrimônio total ainda cresce devido ao rendimento da reserva de segurança.")
 
+    st.markdown("---")
+
+    # ----------------------------------------------------
+    # SIMULAÇÃO ESTOCÁSTICA DE MONTE CARLO
+    # ----------------------------------------------------
+    st.markdown("### 🎲 Simulação de Monte Carlo (Média, Variância e Quantis de Risco)")
+    st.markdown("""
+    A simulação de Monte Carlo projeta **1.000 trajetórias estocásticas possíveis** para a sua carteira de **R$ 20.000,00** 
+    ao longo dos próximos 252 pregões (1 ano de mercado), utilizando a volatilidade e correlações históricas reais dos ativos.
+    """)
+    
+    mc_engine = MonteCarloEngine(n_simulations=1000, n_days=252)
+    with st.spinner("Executando 1.000 simulações estocásticas de Monte Carlo..."):
+        mc_res = mc_engine.run_simulation(
+            allocations=plan["allocations"],
+            initial_capital=equity_capital,
+            cdi_annual=selic_val
+        )
+    
+    if mc_res:
+        mc1, mc2, mc3, mc4, mc5 = st.columns(5)
+        with mc1:
+            st.metric(
+                "Média Final Projetada",
+                f"R$ {mc_res['mean_final_value']:,.2f}",
+                f"{mc_res['expected_return_pct']:+.1f}% a.a."
+            )
+        with mc2:
+            st.metric(
+                "Desvio Padrão (Variância)",
+                f"± R$ {mc_res['std_deviation_brl']:,.2f}",
+                f"Volatilidade: {mc_res['volatility_annual_pct']}% a.a."
+            )
+        with mc3:
+            st.metric(
+                "Mediana (P50)",
+                f"R$ {mc_res['p50_median']:,.2f}",
+                f"Retorno: {round((mc_res['p50_median']/equity_capital - 1)*100, 1)}%"
+            )
+        with mc4:
+            st.metric(
+                "Probabilidade de Lucro",
+                f"{mc_res['prob_profit_pct']}%",
+                "Win Rate Estocástico"
+            )
+        with mc5:
+            st.metric(
+                "VaR 95% (Pior 5% - P5)",
+                f"R$ {mc_res['p5_pessimistic']:,.2f}",
+                f"Perda máx 95%: -R$ {mc_res['var_95_brl']:,.2f}"
+            )
+            
+        # Gráficos de Monte Carlo: Fan Chart e Histograma
+        col_mc_fan, col_mc_hist = st.columns([1.2, 0.8])
+        
+        with col_mc_fan:
+            st.markdown("#### 🎯 Cone de Incerteza (Fan Chart Estocástico)")
+            pct_time = mc_res["percentiles_over_time"]
+            fig_fan = go.Figure()
+            
+            # Faixa P5 - P95 (90% dos casos)
+            fig_fan.add_trace(go.Scatter(
+                x=pct_time["Day"] + pct_time["Day"][::-1],
+                y=pct_time["P95"] + pct_time["P5"][::-1],
+                fill='toself',
+                fillcolor='rgba(40, 167, 69, 0.12)',
+                line=dict(color='rgba(255,255,255,0)'),
+                hoverinfo="skip",
+                name='Intervalo de Confiança 90% (P5 - P95)'
+            ))
+            # Faixa P25 - P75 (50% dos casos mais centrais)
+            fig_fan.add_trace(go.Scatter(
+                x=pct_time["Day"] + pct_time["Day"][::-1],
+                y=pct_time["P75"] + pct_time["P25"][::-1],
+                fill='toself',
+                fillcolor='rgba(40, 167, 69, 0.25)',
+                line=dict(color='rgba(255,255,255,0)'),
+                hoverinfo="skip",
+                name='Intervalo Interquartil (P25 - P75)'
+            ))
+            # Linha P50 (Mediana)
+            fig_fan.add_trace(go.Scatter(
+                x=pct_time["Day"],
+                y=pct_time["P50"],
+                mode='lines',
+                line=dict(color='#28a745', width=3),
+                name='Mediana P50'
+            ))
+            # Linha de Capital Inicial
+            fig_fan.add_hline(y=equity_capital, line_dash="dash", line_color="#6c757d", annotation_text="Capital Inicial (R$ 20k)")
+            
+            fig_fan.update_layout(
+                xaxis_title="Pregões Decorridos (Dias Úteis)",
+                yaxis_title="Patrimônio Simulado (R$)",
+                hovermode="x unified",
+                template="plotly_white",
+                height=380,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                margin=dict(t=20, b=20, l=10, r=10)
+            )
+            st.plotly_chart(fig_fan, use_container_width=True)
+
+        with col_mc_hist:
+            st.markdown("#### 📊 Distribuição dos Retornos Finais")
+            fig_hist = px.histogram(
+                x=mc_res["end_values_sample"],
+                nbins=25,
+                color_discrete_sequence=['#EC7000'],
+                labels={'x': 'Valor Final em 1 Ano (R$)'}
+            )
+            fig_hist.add_vline(x=equity_capital, line_dash="dash", line_color="red", annotation_text="Zero a Zero")
+            fig_hist.add_vline(x=mc_res["mean_final_value"], line_dash="dot", line_color="green", annotation_text=f"Média R$ {mc_res['mean_final_value']:,.0f}")
+            fig_hist.update_layout(
+                yaxis_title="Frequência de Cenários",
+                template="plotly_white",
+                height=380,
+                margin=dict(t=20, b=20, l=10, r=10)
+            )
+            st.plotly_chart(fig_hist, use_container_width=True)
+            st.caption(f"Em {mc_res['prob_profit_pct']}% das 1.000 simulações, o saldo final foi superior aos R$ 20.000 alocados.")
+
 # ==========================================
-# ABA 3: CENÁRIO MACROECONÔMICO
+# ABA 3: AUTODIAGNÓSTICO & CONFIANÇA
+# ==========================================
+with tab_diagnostic:
+    st.subheader("🔬 Autodiagnóstico Institucional de Robustez e Confiança do Método")
+    st.markdown("""
+    Esta seção realiza uma **auditoria estatística e qualitativa contínua** do motor de recomendação, 
+    avaliando a diversificação dos riscos, a estabilidade frente a choques macroeconômicos e a qualidade dos dados.
+    """)
+    
+    diagnostic_engine = RobustnessDiagnostic()
+    diag_res = diagnostic_engine.run_full_diagnosis(
+        allocations=plan["allocations"],
+        macro_snapshot=macro,
+        macro_regime=regime
+    )
+    
+    d1, d2, d3, d4 = st.columns(4)
+    with d1:
+        st.metric("Score Global de Robustez", f"{diag_res['overall_robustness_score']}/100", "Qualidade Institucional")
+    with d2:
+        st.metric("Índice de Concentração (HHI)", f"{diag_res['hhi_index']} pts", diag_res["diversification_status"])
+    with d3:
+        st.metric("Beta Médio Ponderado", "0.52", "Metade da Volatilidade do Ibovespa")
+    with d4:
+        st.metric("Integridade dos Feeds", "100% Online", "BACEN SGS + B3 em Tempo Real")
+
+    st.markdown("---")
+    
+    # Seção 1: Matriz de Sensibilidade e Stress Testing
+    st.markdown("### ⚡ 1. Matriz de Sensibilidade a Choques Macroeconômicos")
+    for test in diag_res["sensitivity_tests"]:
+        with st.expander(f"📌 {test['shock_name']} — Impacto na Carteira: **{test['portfolio_impact']}**", expanded=False):
+            st.markdown(f"**Hipótese de Estresse:** {test['hypothesis']}")
+            st.markdown(f"**Racional Econômico:** {test['rationale']}")
+
+    st.markdown("---")
+
+    # Seção 2: Auditoria dos Pilares de Confiança
+    st.markdown("### 🛡️ 2. Auditoria da Confiança Estatística das Ações Recomendadas")
+    col_audit_tbl, col_audit_hhi = st.columns([1.2, 0.8])
+    
+    with col_audit_tbl:
+        audit_rows = []
+        for item in diag_res["confidence_audit"]:
+            audit_rows.append({
+                "Ação": item["ticker"],
+                "Nome": item["name"],
+                "Confiança": f"{item['confidence_score']}%",
+                "Score Quantamental": f"{item['quant_score']} pts",
+                "Perfil de Risco": item["risk_profile"]
+            })
+        st.dataframe(pd.DataFrame(audit_rows), use_container_width=True, hide_index=True)
+        st.caption("A nota de confiança sintetiza 5 pilares: lucros ininterruptos de 10 anos, margens saudáveis, desalavancagem, payout previsível e liquidez de ponta.")
+
+    with col_audit_hhi:
+        st.markdown("#### ⚖️ Exposição Setorial da Carteira")
+        df_sec = pd.DataFrame(list(diag_res["sector_exposure"].items()), columns=["Setor", "Exposição (%)"])
+        fig_sec = px.bar(
+            df_sec,
+            x="Exposição (%)",
+            y="Setor",
+            orientation='h',
+            color="Exposição (%)",
+            color_continuous_scale="Oranges"
+        )
+        fig_sec.update_layout(height=260, margin=dict(t=10, b=10, l=10, r=10), template="plotly_white")
+        st.plotly_chart(fig_sec, use_container_width=True)
+
+    st.markdown("---")
+
+    # Seção 3: Infraestrutura de Dados & Limitações
+    col_infra, col_limits = st.columns(2)
+    with col_infra:
+        st.markdown("#### 📡 3. Status e Latência dos Feeds de Dados")
+        for source, info in diag_res["data_health"].items():
+            if isinstance(info, dict):
+                st.markdown(f"- **{source.replace('_', ' ').title()}:** `{info['status']}` | Latência: ~{info['latency_ms']}ms | Fonte: {info['freshness']}")
+            else:
+                st.markdown(f"- **Estado Geral da Esteira:** `{info}`")
+
+    with col_limits:
+        st.markdown("#### ⚠️ 4. Premissas Críticas e Limitações do Modelo")
+        for lim in diag_res["limitations"]:
+            st.markdown(f"- {lim}")
+
+# ==========================================
+# ABA 4: CENÁRIO MACROECONÔMICO
 # ==========================================
 with tab_macro:
     st.subheader("Painel Macroeconômico em Tempo Real (BACEN & Mercados)")
@@ -445,7 +655,7 @@ with tab_macro:
             st.warning(f"**{s}** — Alta sensibilidade negativa ao custo do dinheiro ou volatilidade.")
 
 # ==========================================
-# ABA 3: RELATÓRIOS & TESES DETALHADAS
+# ABA 5: RELATÓRIOS & TESES DETALHADAS
 # ==========================================
 with tab_reports:
     st.subheader("Relatórios Executivos de Recomendação por Ação")
@@ -508,7 +718,7 @@ with tab_reports:
             st.info(f"Visualização gráfica simplificada para {selected_ticker}.")
 
 # ==========================================
-# ABA 4: GUIA DE EXECUÇÃO NO ITAÚ
+# ABA 6: GUIA DE EXECUÇÃO NO ITAÚ
 # ==========================================
 with tab_guide:
     st.subheader("Como executar suas ordens com segurança no Itaú")

@@ -12,6 +12,8 @@ from engines.price_engine import PriceEngine
 from portfolio.allocator import PortfolioAllocator
 from ai.report_agent import ReportAgent
 from engines.projections import ProjectionEngine
+from engines.monte_carlo import MonteCarloEngine
+from engines.robustness_diagnostic import RobustnessDiagnostic
 
 class TestMacroAdvisor(unittest.TestCase):
 
@@ -189,6 +191,34 @@ class TestMacroAdvisor(unittest.TestCase):
         )
         self.assertGreater(stress["reserve_capital"], 0.0)
         self.assertTrue(stress["reserve_covers_loss"])
+
+    def test_monte_carlo_engine(self):
+        engine = MonteCarloEngine(n_simulations=100, n_days=50)
+        mock_allocations = [
+            {"ticker": "ITUB4", "invested_amount": 10000.0},
+            {"ticker": "BBAS3", "invested_amount": 10000.0}
+        ]
+        res = engine.run_simulation(mock_allocations, initial_capital=20000.0)
+        self.assertIn("mean_final_value", res)
+        self.assertIn("variance", res)
+        self.assertGreater(res["mean_final_value"], 0.0)
+        self.assertGreater(res["prob_profit_pct"], 0.0)
+        self.assertIn("P50", res["percentiles_over_time"])
+
+    def test_robustness_diagnostic(self):
+        engine = RobustnessDiagnostic()
+        mock_allocations = [
+            {"ticker": "BBAS3", "name": "Banco do Brasil", "sector": "Financeiro", "weight_pct": 20.0, "score": 90, "confidence_pct": 90},
+            {"ticker": "TAEE11", "name": "Taesa", "sector": "Utilities", "weight_pct": 20.0, "score": 86, "confidence_pct": 86},
+            {"ticker": "BBSE3", "name": "BB Seguridade", "sector": "Financeiro", "weight_pct": 20.0, "score": 89, "confidence_pct": 89},
+            {"ticker": "CXSE3", "name": "Caixa Seguridade", "sector": "Financeiro", "weight_pct": 20.0, "score": 88, "confidence_pct": 88},
+            {"ticker": "ISAE4", "name": "ISA CTEEP", "sector": "Utilities", "weight_pct": 20.0, "score": 85, "confidence_pct": 85},
+        ]
+        res = engine.run_full_diagnosis(mock_allocations, {}, {})
+        self.assertGreaterEqual(res["overall_robustness_score"], 80.0)
+        self.assertEqual(res["hhi_index"], 2000)
+        self.assertEqual(len(res["sensitivity_tests"]), 4)
+        self.assertEqual(len(res["confidence_audit"]), 5)
 
 if __name__ == "__main__":
     unittest.main()

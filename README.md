@@ -28,3 +28,4 @@ uv pip install -r requirements.txt
 # Iniciar o dashboard
 ./run_dashboard.sh
 ```
+
