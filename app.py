@@ -286,9 +286,16 @@ def render_top_header(subtitle_text: str):
     </div>
     """, unsafe_allow_html=True)
 
+    focus = macro.get("focus") or {}
+    focus_span = ""
+    if focus.get("selic_2027"):
+        delta_str = f"{focus.get('selic_delta_26_27', 0):+.2f}% p.p."
+        focus_span = f"<span>🎯 <b>Focus Selic 2027:</b> {focus['selic_2027']}% a.a. ({delta_str})</span>"
+
     st.markdown(f"""
     <div class="ticker-tape">
         <span>🏦 <b>Selic Meta (BACEN):</b> {macro['selic_rate']}% a.a.</span>
+        {focus_span}
         <span>📊 <b>IPCA 12m (IBGE):</b> {macro['ipca_12m']}%</span>
         <span>🛡️ <b>Juro Real Brasil:</b> {macro['real_rate']}% a.a.</span>
         <span>💵 <b>Dólar Comercial:</b> R$ {macro['usd_brl']:.2f} ({macro['usd_change_pct']:+.2f}%)</span>
@@ -385,6 +392,9 @@ if "Painel Básico" in view_mode:
 
     basic_table = []
     for item in visible_allocs:
+        bazin_str = f"R$ {item['bazin_fair_price']:.2f}" if item.get("bazin_fair_price") else "N/A"
+        piot_val = item.get("piotroski_score")
+        piot_str = f"{piot_val}/9" if piot_val is not None else "N/A"
         basic_table.append({
             "Ação": item["ticker"],
             "Empresa": item["name"],
@@ -392,6 +402,8 @@ if "Painel Básico" in view_mode:
             "Preço Atual": f"R$ {item['current_price']:.2f}",
             "Qtd Ações": item["shares_count"],
             "Valor Total": f"R$ {item['invested_amount']:,.2f}",
+            "Preço Teto (Bazin)": bazin_str,
+            "Selo Contábil (Piotroski)": piot_str,
             "Faixa de Entrada Ideal": item["entry_action"],
             "Preço-Alvo (Gain)": f"R$ {item['target_price']:.2f} (+{item['potential_gain_pct']}%)",
             "Stop Loss (Proteção)": f"R$ {item['stop_loss_price']:.2f} ({item['max_loss_pct']}%)",
@@ -703,6 +715,13 @@ elif "Simulação" in view_mode:
 
                 sim_table_rows = []
                 for p in s_positions:
+                    bazin_p = p.get("bazin_fair_price")
+                    bazin_str = f"R$ {bazin_p:.2f}" if bazin_p else "N/A"
+                    bazin_diff = p.get("bazin_margin_avg_price_pct")
+                    bazin_diff_str = f"{bazin_diff:+.1f}%" if bazin_diff is not None else "N/A"
+                    piot_val = p.get("piotroski_score")
+                    piot_str = f"{piot_val}/9" if piot_val is not None else "N/A"
+
                     sim_table_rows.append({
                         "Ação": p["ticker"],
                         "Empresa": p["name"],
@@ -714,6 +733,9 @@ elif "Simulação" in view_mode:
                         "Lucro/Prej (R$)": f"R$ {p['pnl_brl']:+,.2f}",
                         "Rentab. (%)": f"{p['pnl_pct']:+.2f}%",
                         "Yield on Cost": f"{p['yield_on_cost_pct']:.2f}%",
+                        "Preço Teto (Bazin)": bazin_str,
+                        "Preço Médio vs Teto": bazin_diff_str,
+                        "Piotroski": piot_str,
                         "Score Hoje": f"{p['score']:.1f}/100",
                         "Novo Alvo": f"R$ {p['target_price']:.2f}",
                         "Stop Proteção": f"R$ {p['stop_loss_price']:.2f}",
@@ -724,10 +746,16 @@ elif "Simulação" in view_mode:
                 st.markdown("---")
                 st.markdown(f"### 📋 Parecer Técnico e Instrução de Boleta ({selected_broker})")
                 for p in s_positions:
+                    bazin_val = p.get("bazin_fair_price")
+                    bazin_note = f"R$ {bazin_val:.2f} ({'✅ Preço Médio Abaixo do Teto Bazin' if p['avg_price'] <= bazin_val else '⚠️ Preço Médio Acima do Teto Bazin'})" if bazin_val else "N/A"
+                    piot_b = p.get("piotroski_badge") or "N/A"
+                    piot_disp = f"{p.get('piotroski_score')}/9 ({piot_b})" if p.get('piotroski_score') is not None else "N/A"
+
                     box_text = f"""
                     **{p['ticker']} ({p['name']}) — {p['action_badge']}** *(Prioridade: {p['action_priority']})*
                     - **Sua Posição:** `{p['shares_count']} ações` compradas a **R$ {p['avg_price']:.2f}** (Custo: R$ {p['invested_cost']:,.2f}) $\\rightarrow$ **Cotação Hoje: R$ {p['current_price']:.2f}** (Valor: **R$ {p['current_value']:,.2f}** | Resultado: **{p['pnl_pct']:+.2f}% / R$ {p['pnl_brl']:+,.2f}**)
                     - **Proventos da Sua Posição:** Receita anual estimada de **R$ {p['annual_dividends_brl']:,.2f}** (*Yield on Cost* de **{p['yield_on_cost_pct']:.2f}% a.a.** sobre seu preço pago | DY atual de {p['dividend_yield']}%).
+                    - **🏛️ Auditoria Forense & Valuation:** Preço Teto Bazin: **{bazin_note}** | Solidez Contábil (Piotroski): **{piot_disp}**
                     - **📱 O Que Fazer no App ({selected_broker}):** `{p['summary_command']}`
                     - **🧠 Parecer do Sistema:** {p['rationale']}
                     """
@@ -1212,8 +1240,9 @@ else:
             "para desbloquear todas as simulações estocásticas, digite a chave PRO-VIP-2026 na barra lateral ou assine o Plano PRO."
         )
 
-    tab_portfolio, tab_events, tab_backtest, tab_opportunities, tab_projections, tab_diagnostic, tab_unbiased, tab_macro, tab_reports, tab_guide = st.tabs([
+    tab_portfolio, tab_valuation, tab_events, tab_backtest, tab_opportunities, tab_projections, tab_diagnostic, tab_unbiased, tab_macro, tab_reports, tab_guide = st.tabs([
         "💼 Carteira Recomendada",
+        "🏛️ Valuation Intrínseco & Forense",
         "📡 Eventos, Eleições & Geopolítica",
         "⏪ Backtesting Histórico",
         "🔥 Oportunidades & Turnaround",
@@ -1284,6 +1313,98 @@ else:
                   - 🎯 **Preço-Alvo de Venda:** R$ {item['target_price']:.2f}
                   - 🛑 **Stop Loss de Segurança:** R$ {item['stop_loss_price']:.2f}
                 """)
+
+    with tab_valuation:
+        st.subheader("🏛️ Valuation Intrínseco Multimetodológico, Análise Forense & Sazonalidade")
+        st.markdown("""
+        Esta seção reúne **4 modelos quantitativos institucionais** consolidados para estimar o valor justo,
+        auditar a qualidade dos balanços e identificar armadilhas contábeis (*Value Traps*), sem qualquer viés de corretora:
+        1. **Preço Teto de Décio Bazin:** Determina o preço máximo a pagar para garantir no mínimo **6% ao ano de dividendos**.
+        2. **Valor Justo de Benjamin Graham:** $\\sqrt{22.5 \\times \\text{LPA} \\times \\text{VPA}}$, buscando margem de segurança de ativos subavaliados.
+        3. **Gordon DDM & Reverse DCF:** Revela o crescimento anual de lucros implícito precificado pelo mercado.
+        4. **Piotroski F-Score (0 a 9) & Altman Z''-Score:** Indicador de solidez operacional e modelo anti-falência para mercados emergentes.
+        5. **Sazonalidade Histórica Mensal:** Taxa de acerto (Win Rate) empírica da ação no mês calendário atual nos últimos 7 anos.
+        """)
+
+        # Tabela consolidada de Valuation & Forense
+        val_rows = []
+        for alloc in plan["allocations"]:
+            t_ticker = alloc["ticker"]
+            val_info = alloc.get("valuation") or {}
+            for_info = alloc.get("forensic") or {}
+            seas_info = alloc.get("seasonality") or {}
+
+            bazin_p = val_info.get("bazin_fair_price")
+            bazin_m = val_info.get("bazin_margin_pct")
+            graham_p = val_info.get("graham_fair_price")
+            graham_m = val_info.get("graham_margin_pct")
+            comp_p = val_info.get("composite_fair_price")
+            comp_m = val_info.get("composite_margin_pct")
+            f_score = for_info.get("piotroski_score")
+            f_badge = for_info.get("piotroski_badge", "N/A")
+            z_zone = for_info.get("altman_zone", "N/A")
+            win_rate = seas_info.get("win_rate_pct")
+
+            val_rows.append({
+                "Ação": t_ticker,
+                "Preço Hoje": f"R$ {alloc['current_price']:.2f}",
+                "Preço Teto Bazin (6%)": f"R$ {bazin_p:.2f}" if bazin_p else "N/A",
+                "Margem Bazin": f"{bazin_m:+.1f}%" if bazin_m is not None else "N/A",
+                "Valor Justo Graham": f"R$ {graham_p:.2f}" if graham_p else "N/A",
+                "Margem Graham": f"{graham_m:+.1f}%" if graham_m is not None else "N/A",
+                "Preço Sintético Consenso": f"R$ {comp_p:.2f}" if comp_p else "N/A",
+                "Margem Consenso": f"{comp_m:+.1f}%" if comp_m is not None else "N/A",
+                "Piotroski F-Score": f"{f_score}/9 ({f_badge})" if f_score is not None else "N/A",
+                "Risco Solvência (Altman)": z_zone,
+                "Win Rate Mês Atual": f"{win_rate:.0f}%" if win_rate is not None else "N/A",
+            })
+        st.dataframe(pd.DataFrame(val_rows), use_container_width=True, hide_index=True)
+
+        st.markdown("---")
+        st.markdown("### 🔍 Detalhamento por Ativo: Auditoria Forense e Sazonalidade")
+
+        for alloc in plan["allocations"][:perms["max_visible_recommendations"]]:
+            t_ticker = alloc["ticker"]
+            val_info = alloc.get("valuation") or {}
+            for_info = alloc.get("forensic") or {}
+            seas_info = alloc.get("seasonality") or {}
+
+            with st.expander(f"🔬 {t_ticker} — Raio-X de Valuation, Balanço Forense e Sazonalidade", expanded=False):
+                col_v1, col_v2, col_v3 = st.columns(3)
+                with col_v1:
+                    st.markdown("##### 🏛️ Modelos de Valuation")
+                    bazin_disp = f"R$ {val_info.get('bazin_fair_price', 0):.2f}" if val_info.get('bazin_fair_price') else "N/A"
+                    graham_disp = f"R$ {val_info.get('graham_fair_price', 0):.2f}" if val_info.get('graham_fair_price') else "N/A"
+                    gordon_disp = f"R$ {val_info.get('gordon_fair_price', 0):.2f}" if val_info.get('gordon_fair_price') else "N/A"
+                    st.markdown(f"""
+                    - **Cotação Atual:** `R$ {alloc['current_price']:.2f}`
+                    - **Preço Teto Bazin:** `{bazin_disp}` ({val_info.get('bazin_margin_pct', 'N/A')}% margem)
+                    - **Valor Justo Graham:** `{graham_disp}` ({val_info.get('graham_margin_pct', 'N/A')}% margem)
+                    - **Gordon DDM (Crescimento 5%):** `{gordon_disp}`
+                    - **Crescimento Implícito (Reverse DCF):** `{val_info.get('reverse_dcf_implied_growth_pct', 'N/A')}% a.a.`
+                    - **Veredito:** `{val_info.get('valuation_verdict', 'Atrativo')}`
+                    """)
+                with col_v2:
+                    st.markdown("##### 🩺 Saúde Contábil & Risco de Falência")
+                    trap_warning = "⚠️ ATENÇÃO: Risco Contábil" if for_info.get('is_value_trap') else "✅ Nenhuma anomalia contábil detectada"
+                    st.markdown(f"""
+                    - **Piotroski F-Score:** `{for_info.get('piotroski_score', 'N/A')}/9` — **{for_info.get('piotroski_badge', 'N/A')}**
+                    - **Altman Z''-Score Emergente:** `{for_info.get('altman_z_score', 'N/A')}` ({for_info.get('altman_zone', 'N/A')})
+                    - **Diagnóstico Forense:** `{for_info.get('summary', 'Estrutura de capital sólida')}`
+                    - **Armadilha de Valor (Value Trap):** `{trap_warning}`
+                    """)
+                with col_v3:
+                    st.markdown("##### 📅 Sazonalidade Histórica Mensal")
+                    hot_months = seas_info.get('dividend_hot_months', [])
+                    hot_months_str = ", ".join(str(m) for m in hot_months) if hot_months else "Sem histórico fixo"
+                    st.markdown(f"""
+                    - **Mês Analisado:** `{seas_info.get('current_month_name', 'Mês Atual')}` ({seas_info.get('years_analyzed', 7)} anos de histórico)
+                    - **Taxa de Fechamento Positivo (Win Rate):** `{seas_info.get('win_rate_pct', 'N/A')}%`
+                    - **Retorno Médio Histórico no Mês:** `{seas_info.get('avg_month_return_pct', 0):+.2f}%`
+                    - **Melhor / Pior Mês Histórico:** `+{seas_info.get('best_month_return_pct', 0):.1f}%` / `{seas_info.get('worst_month_return_pct', 0):.1f}%`
+                    - **Meses Quentes de Dividendos:** `{hot_months_str}`
+                    - **Conclusão:** `{seas_info.get('seasonality_verdict', 'Neutro')}`
+                    """)
 
     with tab_events:
         st.subheader("📡 Radar de Eventos Cíclicos (Eleições/Copom) & Choques Imprevisíveis (Geopolítica)")
@@ -1475,8 +1596,28 @@ else:
         st.success("Este sistema opera sobre dados 100% públicos e auditáveis (BACEN SGS 432/13522, B3 e CVM ITR/DFP), sem interferência comercial de corretoras ou casas de análise patrocinadas.")
 
     with tab_macro:
-        st.subheader("Painel Macroeconômico em Tempo Real (BACEN & Mercados)")
-        st.info(f"**Diagnóstico do Ciclo ({regime['regime_name']}):** {regime['description']}")
+        st.subheader("Painel Macroeconômico em Tempo Real (BACEN SGS & API Olinda Focus)")
+        st.info(f"**Diagnóstico do Ciclo Atual ({regime['regime_name']}):** {regime['description']}")
+
+        focus = macro.get("focus") or {}
+        if focus:
+            st.markdown("### 🎯 Boletim Focus do Banco Central (Expectativas Anuais do Mercado)")
+            m_col1, m_col2, m_col3 = st.columns(3)
+            with m_col1:
+                st.metric("Selic Projetada 2027", f"{focus.get('selic_2027', 11.75)}% a.a.", f"Ciclo: {focus.get('selic_delta_26_27', -1.50):+.2f}% p.p. vs 2026")
+            with m_col2:
+                st.metric("IPCA Projetado 2027", f"{focus.get('ipca_2027', 4.34)}% a.a.", "Convergência para a Meta")
+            with m_col3:
+                st.metric("PIB Projetado 2027", f"{focus.get('pib_2027', 1.35)}% a.a.", "Crescimento Moderado")
+
+            st.success(f"**🧭 Sinalização do Ciclo Monetário:** {focus.get('monetary_impulse')}")
+
+            focus_df = pd.DataFrame([
+                {"Indicador Focus": "Taxa Selic Meta (% a.a.)", "2026 (Atual)": f"{focus.get('selic_2026', 13.25)}%", "2027 (Projeção)": f"{focus.get('selic_2027', 11.75)}%", "2028 (Longo Prazo)": f"{focus.get('selic_2028', 10.00)}%"},
+                {"Indicador Focus": "Inflação IPCA (% 12m)", "2026 (Atual)": f"{focus.get('ipca_2026', 5.19)}%", "2027 (Projeção)": f"{focus.get('ipca_2027', 4.34)}%", "2028 (Longo Prazo)": f"{focus.get('ipca_2028', 3.75)}%"},
+                {"Indicador Focus": "Crescimento PIB Total (%)", "2026 (Atual)": f"{focus.get('pib_2026', 1.80)}%", "2027 (Projeção)": f"{focus.get('pib_2027', 1.35)}%", "2028 (Longo Prazo)": f"{focus.get('pib_2028', 1.80)}%"},
+            ])
+            st.dataframe(focus_df, use_container_width=True, hide_index=True)
 
     with tab_reports:
         st.subheader("Relatórios Executivos de Recomendação por Ação")

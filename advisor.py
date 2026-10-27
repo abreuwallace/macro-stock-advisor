@@ -11,9 +11,13 @@ from config.settings import SETTINGS
 from collectors.macro_collector import MacroCollector
 from collectors.market_collector import MarketCollector
 from collectors.fund_collector import FundamentalCollector
+from collectors.focus_collector import FocusCollector
 from engines.macro_regime import MacroRegimeEngine
 from engines.stock_screener import StockScreener
 from engines.price_engine import PriceEngine
+from engines.valuation_engine import ValuationEngine
+from engines.forensic_analysis import ForensicAnalysisEngine
+from engines.seasonality_engine import SeasonalityEngine
 from portfolio.allocator import PortfolioAllocator
 from ai.report_agent import ReportAgent
 
@@ -24,11 +28,15 @@ class MacroStockAdvisor:
 
     def __init__(self, api_key: Optional[str] = None):
         self.macro_collector = MacroCollector()
+        self.focus_collector = FocusCollector()
         self.market_collector = MarketCollector()
         self.fund_collector = FundamentalCollector()
         self.regime_engine = MacroRegimeEngine()
         self.screener = StockScreener()
         self.price_engine = PriceEngine()
+        self.valuation_engine = ValuationEngine()
+        self.forensic_engine = ForensicAnalysisEngine()
+        self.seasonality_engine = SeasonalityEngine()
         self.allocator = PortfolioAllocator(total_capital=SETTINGS.EQUITY_CAPITAL)
         self.report_agent = ReportAgent(api_key=api_key)
 
@@ -61,6 +69,11 @@ class MacroStockAdvisor:
         """
         # 1. Macro & Regime
         macro_snapshot = self.macro_collector.get_macro_snapshot()
+        try:
+            macro_snapshot["focus"] = self.focus_collector.get_focus_expectations()
+        except Exception as e:
+            logger.warning(f"Erro ao enriquecer macro com Boletim Focus: {e}")
+            macro_snapshot["focus"] = None
         regime = self.regime_engine.analyze_regime(macro_snapshot, user_profile=user_profile)
 
         # 2. Varredura Multithread do Universo de Ações
@@ -82,9 +95,49 @@ class MacroStockAdvisor:
             top_n=top_n
         )
 
-        # 4. Cálculo de Níveis de Preço (Entrada, Alvo e Stop)
+        # 4. Cálculo de Níveis de Preço e Motores Institucionais
         for item in ranked_candidates:
             item["price_levels"] = self.price_engine.calculate_price_levels(item)
+            symbol = item.get("symbol", "")
+            meta = item.get("meta", {})
+            fund = item.get("fund", {})
+            tech = item.get("tech", {})
+            curr_price = tech.get("current_price") or 0.0
+
+            # 4.1 Valuation Intrínseco Multimetodológico (Bazin, Graham, Gordon, Reverse DCF)
+            try:
+                item["valuation"] = self.valuation_engine.calculate_intrinsic_valuation(
+                    current_price=curr_price,
+                    trailing_eps=fund.get("trailing_eps"),
+                    book_value=fund.get("book_value"),
+                    annual_dividends_avg=fund.get("annual_dividends_1y") or 0.0,
+                    pe_ratio=fund.get("pe_ratio"),
+                    dividend_yield_pct=fund.get("dividend_yield") or 0.0,
+                )
+            except Exception as e:
+                logger.warning(f"Erro ao calcular valuation intrínseco para {symbol}: {e}")
+                item["valuation"] = None
+
+            # 4.2 Análise Forense e Saúde Contábil (Piotroski F-Score & Altman Z''-Score)
+            try:
+                item["forensic"] = self.forensic_engine.evaluate_forensic_health(
+                    symbol=symbol,
+                    meta=meta,
+                    fund=fund,
+                    raw_info=fund.get("raw_info")
+                )
+            except Exception as e:
+                logger.warning(f"Erro na análise forense para {symbol}: {e}")
+                item["forensic"] = None
+
+            # 4.3 Sazonalidade Histórica Mensal (Win Rate e Efeito Dividendos)
+            try:
+                item["seasonality"] = self.seasonality_engine.analyze_stock_seasonality(
+                    symbol=symbol
+                )
+            except Exception as e:
+                logger.warning(f"Erro na análise de sazonalidade para {symbol}: {e}")
+                item["seasonality"] = None
 
         # 5. Dimensionamento do Capital (R$ 20.000)
         portfolio_plan = self.allocator.allocate_portfolio(ranked_candidates)

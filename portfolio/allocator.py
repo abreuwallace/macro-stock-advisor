@@ -64,6 +64,13 @@ class PortfolioAllocator:
                 "dividend_yield": stock["fund"].get("dividend_yield", 0.0),
                 "pe_ratio": stock["fund"].get("pe_ratio"),
                 "roe": stock["fund"].get("roe"),
+                "valuation": stock.get("valuation"),
+                "forensic": stock.get("forensic"),
+                "seasonality": stock.get("seasonality"),
+                "bazin_fair_price": stock.get("valuation", {}).get("bazin_fair_price") if stock.get("valuation") else None,
+                "graham_fair_price": stock.get("valuation", {}).get("graham_fair_price") if stock.get("valuation") else None,
+                "piotroski_score": stock.get("forensic", {}).get("piotroski_score") if stock.get("forensic") else None,
+                "piotroski_badge": stock.get("forensic", {}).get("piotroski_badge") if stock.get("forensic") else None,
             })
 
         cash_remaining = round(self.total_capital - total_invested, 2)

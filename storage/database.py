@@ -242,3 +242,4 @@ class SaaSDatabase:
             return row["value"] if row else default
         finally:
             conn.close()
+

@@ -24,6 +24,10 @@ from engines.onboarding_engine import OnboardingEngine
 from monetization.saas_engine import SaaSMonetizationEngine
 from storage.database import SaaSDatabase
 from utils.exporter import ReportExporter
+from engines.valuation_engine import ValuationEngine
+from engines.forensic_analysis import ForensicAnalysisEngine
+from engines.seasonality_engine import SeasonalityEngine
+from collectors.focus_collector import FocusCollector
 
 class TestMacroAdvisor(unittest.TestCase):
 
@@ -367,6 +371,74 @@ class TestMacroAdvisor(unittest.TestCase):
         )
         self.assertIn("RESOLUÇÃO CVM Nº 20", html_str)
         self.assertIn("TAEE11", html_str)
+
+    def test_valuation_engine_models(self):
+        engine = ValuationEngine()
+        # Teste Bazin: dividendo 1.50 -> teto = 1.50 / 0.06 = 25.00
+        # Teste Graham: LPA=3.0, VPA=15.0 -> sqrt(22.5 * 3 * 15) = sqrt(1012.5) = 31.82
+        res = engine.calculate_intrinsic_valuation(
+            current_price=20.00,
+            trailing_eps=3.0,
+            book_value=15.0,
+            annual_dividends_avg=1.50,
+            pe_ratio=6.67,
+            dividend_yield_pct=7.5
+        )
+        self.assertAlmostEqual(res["bazin_fair_price"], 25.00, places=1)
+        self.assertAlmostEqual(res["graham_fair_price"], 31.82, places=1)
+        self.assertGreater(res["bazin_margin_pct"], 0)
+        self.assertGreater(res["graham_margin_pct"], 0)
+        self.assertIsNotNone(res["composite_fair_price"])
+        self.assertIsNotNone(res["reverse_dcf_implied_growth_pct"])
+
+    def test_forensic_analysis_engine(self):
+        engine = ForensicAnalysisEngine()
+        meta = {"ticker": "EGIE3", "sector": "Utilities"}
+        fund = {"roe": 28.0, "pe_ratio": 8.0, "pb_ratio": 2.1, "debt_to_equity": 200.0, "dividend_yield": 6.5}
+        raw_info = {
+            "returnOnAssets": 0.07,
+            "operatingCashflow": 4_000_000_000,
+            "netIncomeToCommon": 3_500_000_000,
+            "currentRatio": 1.20,
+            "grossMargins": 0.45,
+            "totalDebt": 30_000_000_000,
+            "totalCash": 6_000_000_000,
+            "marketCap": 40_000_000_000,
+        }
+        res = engine.evaluate_forensic_health(
+            symbol="EGIE3.SA",
+            meta=meta,
+            fund=fund,
+            raw_info=raw_info
+        )
+        self.assertGreaterEqual(res["piotroski_score"], 6)
+        self.assertIn("Piotroski", res["summary"])
+        self.assertTrue(any(z in res["altman_zone"] for z in ["Zona Segura", "Zona Cinzenta", "Zona de Perigo"]))
+        self.assertFalse(res["is_value_trap"])
+
+    def test_focus_collector(self):
+        collector = FocusCollector(timeout=3)
+        res = collector.get_focus_expectations()
+        self.assertIn("selic_2026", res)
+        self.assertIn("selic_2027", res)
+        self.assertIn("selic_2028", res)
+        self.assertIn("ipca_2027", res)
+        self.assertIn("pib_2027", res)
+        self.assertIn("selic_delta_26_27", res)
+        self.assertIn("monetary_impulse", res)
+        self.assertIsInstance(res["selic_2027"], float)
+
+    def test_seasonality_engine(self):
+        engine = SeasonalityEngine()
+        # Analisa mês 10 (Outubro)
+        res = engine.analyze_stock_seasonality(symbol="BBAS3.SA", target_month=10, lookback_years=5)
+        self.assertEqual(res["target_month"], 10)
+        self.assertEqual(res["current_month_name"], "Outubro")
+        self.assertGreaterEqual(res["years_analyzed"], 1)
+        self.assertGreaterEqual(res["win_rate_pct"], 0.0)
+        self.assertLessEqual(res["win_rate_pct"], 100.0)
+        self.assertIn("seasonality_verdict", res)
+        self.assertIn(res["ticker_clean"], engine.DIVIDEND_HOT_MONTHS)
 
 if __name__ == "__main__":
     unittest.main()

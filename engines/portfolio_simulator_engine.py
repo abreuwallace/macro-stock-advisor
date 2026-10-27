@@ -16,6 +16,8 @@ from collectors.fund_collector import FundamentalCollector
 from engines.macro_regime import MacroRegimeEngine
 from engines.stock_screener import StockScreener
 from engines.price_engine import PriceEngine
+from engines.valuation_engine import ValuationEngine
+from engines.forensic_analysis import ForensicAnalysisEngine
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +35,8 @@ class PortfolioSimulatorEngine:
         self.regime_engine = MacroRegimeEngine()
         self.screener = StockScreener()
         self.price_engine = PriceEngine()
+        self.valuation_engine = ValuationEngine()
+        self.forensic_engine = ForensicAnalysisEngine()
         self.universe_map = {
             k.replace(".SA", ""): v for k, v in UNIVERSE_B3.items()
         }
@@ -111,6 +115,33 @@ class PortfolioSimulatorEngine:
         confidence_pct = int(scored["confidence_pct"])
         rsi_14 = float(tech.get("rsi_14", 50.0))
 
+        # Valuation Intrínseco & Análise Forense da Posição
+        try:
+            val_data = self.valuation_engine.calculate_intrinsic_valuation(
+                current_price=current_price,
+                trailing_eps=fund.get("trailing_eps"),
+                book_value=fund.get("book_value"),
+                annual_dividends_avg=fund.get("annual_dividends_1y") or 0.0,
+                pe_ratio=fund.get("pe_ratio"),
+                dividend_yield_pct=current_dy,
+            )
+        except Exception:
+            val_data = {}
+
+        try:
+            forensic_data = self.forensic_engine.evaluate_forensic_health(
+                symbol=yf_symbol,
+                meta=meta,
+                fund=fund,
+                raw_info=fund.get("raw_info")
+            )
+        except Exception:
+            forensic_data = {}
+
+        bazin_price = val_data.get("bazin_fair_price")
+        graham_price = val_data.get("graham_fair_price")
+        bazin_diff_pct = round(((bazin_price / avg_price) - 1.0) * 100.0, 1) if (bazin_price and avg_price > 0) else None
+
         return {
             "ticker": raw_ticker,
             "symbol": yf_symbol,
@@ -138,6 +169,14 @@ class PortfolioSimulatorEngine:
             "rsi_14": round(rsi_14, 1),
             "pe_ratio": fund.get("pe_ratio"),
             "roe": fund.get("roe"),
+            "bazin_fair_price": bazin_price,
+            "graham_fair_price": graham_price,
+            "bazin_margin_avg_price_pct": bazin_diff_pct,
+            "piotroski_score": forensic_data.get("piotroski_score"),
+            "piotroski_badge": forensic_data.get("piotroski_badge"),
+            "altman_zone": forensic_data.get("altman_zone"),
+            "valuation": val_data,
+            "forensic": forensic_data,
             "reasons": scored.get("reasons", []),
         }
 

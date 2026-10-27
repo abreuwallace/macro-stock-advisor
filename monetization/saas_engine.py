@@ -205,3 +205,4 @@ class SaaSMonetizationEngine:
             "ltv_brl": ltv_estimated,
             "projection_12m": projection_12m,
         }
+

@@ -255,3 +255,4 @@ class OnboardingEngine:
         if lotes > 0:
             return f"No Home Broker {broker_name}: {lotes} lote(s) padrão de {ticker} ({shares} ações)."
         return f"No Home Broker {broker_name}: comprar {shares} ações no código fracionário {ticker}F."
+

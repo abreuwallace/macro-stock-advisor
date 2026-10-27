@@ -28,6 +28,10 @@ class FundamentalCollector:
             "debt_to_equity": None,
             "analyst_target_price": None,
             "market_cap": None,
+            "book_value": None,
+            "trailing_eps": None,
+            "annual_dividends_1y": 0.0,
+            "raw_info": {},
             "has_good_dividend": False,
             "is_financially_healthy": True,
         }
@@ -60,6 +64,7 @@ class FundamentalCollector:
                     # Soma proventos estritamente dos últimos 365 dias corridos
                     cutoff_date = dividends.index[-1] - pd.Timedelta(days=365)
                     last_1y_divs = float(dividends[dividends.index >= cutoff_date].sum())
+                    data["annual_dividends_1y"] = round(last_1y_divs, 2)
                     dy_calc = (last_1y_divs / current_price) * 100.0
                     data["dividend_yield"] = round(min(22.0, dy_calc), 2)
             except Exception:
@@ -67,11 +72,23 @@ class FundamentalCollector:
 
             # Fallback para dividendRate ou dividendYield do info
             if data["dividend_yield"] <= 0.5:
+                div_rate = info.get("dividendRate")
+                if div_rate:
+                    data["annual_dividends_1y"] = round(float(div_rate), 2)
                 dy_info = info.get("dividendYield")
                 if dy_info is not None:
                     # yfinance às vezes reporta 0.08 para 8% ou 8.0
                     dy_val = float(dy_info)
                     data["dividend_yield"] = round(dy_val * 100 if dy_val < 1.0 else dy_val, 2)
+
+            # Book Value por Ação (VPA) e Trailing EPS (LPA)
+            bv = info.get("bookValue")
+            if bv is not None:
+                data["book_value"] = round(float(bv), 2)
+            eps = info.get("trailingEps")
+            if eps is not None:
+                data["trailing_eps"] = round(float(eps), 2)
+            data["raw_info"] = info
 
             # Endividamento (Dívida / PL em %)
             debt_eq = info.get("debtToEquity")
