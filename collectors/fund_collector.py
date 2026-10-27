@@ -5,6 +5,7 @@ Múltiplos de Valuation, Retorno sobre Patrimônio (ROE), Endividamento e Divide
 import logging
 import warnings
 from typing import Dict, Any, Optional
+import pandas as pd
 import yfinance as yf
 
 warnings.filterwarnings("ignore")
@@ -56,10 +57,11 @@ class FundamentalCollector:
             try:
                 dividends = ticker.dividends
                 if not dividends.empty and current_price and current_price > 0:
-                    # Soma proventos dos últimos 365 dias
-                    last_1y_divs = float(dividends.tail(12).sum())
+                    # Soma proventos estritamente dos últimos 365 dias corridos
+                    cutoff_date = dividends.index[-1] - pd.Timedelta(days=365)
+                    last_1y_divs = float(dividends[dividends.index >= cutoff_date].sum())
                     dy_calc = (last_1y_divs / current_price) * 100.0
-                    data["dividend_yield"] = round(dy_calc, 2)
+                    data["dividend_yield"] = round(min(22.0, dy_calc), 2)
             except Exception:
                 pass
 

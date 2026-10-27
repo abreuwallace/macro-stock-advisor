@@ -18,6 +18,7 @@ from engines.robustness_diagnostic import RobustnessDiagnostic
 from engines.opportunity_engine import OpportunityEngine
 from engines.backtest_engine import BacktestEngine
 from engines.event_radar_engine import EventRadarEngine
+from engines.portfolio_simulator_engine import PortfolioSimulatorEngine
 
 # Configuração da Página Streamlit
 st.set_page_config(
@@ -57,9 +58,13 @@ st.sidebar.title("Configurações da Carteira")
 
 view_mode = st.sidebar.radio(
     "🖥️ Modo de Visualização",
-    options=["📋 Painel Básico (Simplificado)", "🔬 Painel Avançado (Completo)"],
+    options=[
+        "📋 Painel Básico (Simplificado)",
+        "🔬 Painel Avançado (Completo)",
+        "🧭 Painel Simulação (Minha Carteira)"
+    ],
     index=0,
-    help="Alterne entre o Painel Básico (apenas ações recomendadas, ordens e relatórios executivos diretos) e o Painel Avançado (Monte Carlo, autodiagnóstico, oportunidades e métricas completas)."
+    help="Alterne entre o Painel Básico (executivo), Painel Avançado (arcabouço completo) e Painel Simulação (auditoria e recomendações de atuação sobre uma carteira que você já montou)."
 )
 
 st.sidebar.markdown("---")
@@ -125,6 +130,16 @@ def get_backtest_data(allocations: list, capital: float, cdi_annual: float):
 def get_event_radar_data(allocations: list):
     ev_engine = EventRadarEngine()
     return ev_engine.get_full_event_radar(allocations)
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def get_simulated_portfolio_data(holdings: list, profile_name: str, rec_allocations: list):
+    sim_engine = PortfolioSimulatorEngine()
+    return sim_engine.evaluate_user_portfolio(
+        user_holdings=holdings,
+        user_profile=profile_name,
+        recommended_allocations=rec_allocations
+    )
 
 # Execução da Análise
 if refresh_btn:
@@ -237,6 +252,449 @@ if "Básico" in view_mode:
     )
     basic_rep = reports.get(basic_selected_ticker, {})
     st.markdown(basic_rep.get("content", "Relatório não disponível."))
+
+
+# ==============================================================================
+# MODO 2: PAINEL SIMULAÇÃO (AUDITORIA E GESTÃO DE CARTEIRA JÁ MONTADA)
+# ==============================================================================
+elif "Simulação" in view_mode:
+    st.markdown('<div class="main-header">Robô Macro B3 — Painel Simulação (Minha Carteira)</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="sub-header">Auditoria em Tempo Real da Sua Carteira Anterior: '
+        'Cálculo de Lucro/Prejuízo, Yield on Cost, Risco, Monte Carlo, Backtest e Recomendações Táticas de Como Atuar Hoje</div>',
+        unsafe_allow_html=True
+    )
+
+    st.info("""
+    🧭 **Como funciona o Painel Simulação:**
+    Insira abaixo as ações que você **já comprou no Itaú** (meses atrás ou na recomendação anterior), informando a **Quantidade de Ações** e o **Preço Médio de Compra (R$)**.
+    O sistema **não cria uma carteira do zero**: ele audita a **sua carteira montada** sob as cotações e o cenário macroeconômico de hoje e responde para cada ativo:
+    **Manter (Hold), Comprar Mais (Aporte), Realizar Lucro (Venda Parcial/Total), Rebalancear Peso ou Acionar Defesa (Stop/Substituição).**
+    """)
+
+    # Inicializar carteira de exemplo na sessão caso não exista
+    if "user_sim_portfolio" not in st.session_state:
+        st.session_state["user_sim_portfolio"] = [
+            {"Ticker (B3)": "TAEE11", "Quantidade": 100, "Preço Médio (R$)": 38.00},
+            {"Ticker (B3)": "CXSE3", "Quantidade": 220, "Preço Médio (R$)": 16.50},
+            {"Ticker (B3)": "BBSE3", "Quantidade": 115, "Preço Médio (R$)": 33.20},
+            {"Ticker (B3)": "ISAE4", "Quantidade": 150, "Preço Médio (R$)": 25.80},
+            {"Ticker (B3)": "BBAS3", "Quantidade": 170, "Preço Médio (R$)": 23.00},
+        ]
+
+    col_editor, col_presets = st.columns([1.45, 0.55])
+    with col_presets:
+        st.markdown("#### ⚙️ Atalhos de Carteira")
+        if st.button("📥 Carregar Carteira Recomendada de Hoje", use_container_width=True):
+            st.session_state["user_sim_portfolio"] = [
+                {
+                    "Ticker (B3)": a["ticker"],
+                    "Quantidade": int(a["shares_count"]),
+                    "Preço Médio (R$)": float(a["current_price"]),
+                }
+                for a in plan["allocations"]
+            ]
+            st.rerun()
+
+        if st.button("🕰️ Carregar Exemplo de Carteira Anterior (c/ Lucros e Quedas)", use_container_width=True):
+            st.session_state["user_sim_portfolio"] = [
+                {"Ticker (B3)": "TAEE11", "Quantidade": 100, "Preço Médio (R$)": 38.00},
+                {"Ticker (B3)": "CXSE3", "Quantidade": 220, "Preço Médio (R$)": 16.50},
+                {"Ticker (B3)": "BBSE3", "Quantidade": 115, "Preço Médio (R$)": 33.20},
+                {"Ticker (B3)": "PETR4", "Quantidade": 95, "Preço Médio (R$)": 36.00},
+                {"Ticker (B3)": "BBAS3", "Quantidade": 170, "Preço Médio (R$)": 23.00},
+            ]
+            st.rerun()
+
+        st.caption(
+            "💡 Você pode editar qualquer célula na tabela ao lado, adicionar novas linhas (`+`) ou excluir linhas existentes."
+        )
+
+    with col_editor:
+        st.markdown("#### 📝 Edite os Ativos da Sua Carteira Montada no Itaú")
+        edited_df = st.data_editor(
+            pd.DataFrame(st.session_state["user_sim_portfolio"]),
+            num_rows="dynamic",
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Ticker (B3)": st.column_config.TextColumn(
+                    "Ação (Ticker B3)",
+                    help="Ex: BBAS3, TAEE11, ITUB4, PETR4, WEGE3, CXSE3, ISAE4",
+                    required=True,
+                ),
+                "Quantidade": st.column_config.NumberColumn(
+                    "Quantidade de Ações",
+                    min_value=1,
+                    max_value=1_000_000,
+                    step=10,
+                    required=True,
+                ),
+                "Preço Médio (R$)": st.column_config.NumberColumn(
+                    "Preço Médio de Compra (R$)",
+                    min_value=0.01,
+                    max_value=10_000.0,
+                    step=0.50,
+                    format="R$ %.2f",
+                    required=True,
+                ),
+            },
+            key="portfolio_sim_editor"
+        )
+
+    # Converter o DataFrame editado para a lista de holdings
+    parsed_holdings = []
+    for _, row in edited_df.iterrows():
+        t_val = str(row.get("Ticker (B3)", "")).strip().upper()
+        q_val = row.get("Quantidade", 0)
+        p_val = row.get("Preço Médio (R$)", 0.0)
+        if t_val and pd.notna(q_val) and float(q_val) > 0 and pd.notna(p_val) and float(p_val) > 0:
+            parsed_holdings.append({
+                "ticker": t_val,
+                "shares": int(q_val),
+                "avg_price": float(p_val),
+            })
+
+    if not parsed_holdings:
+        st.warning("Adicione pelo menos 1 ação válida na tabela acima para calcular as métricas da sua carteira.")
+    else:
+        with st.spinner("Auditando sua carteira montada em tempo real (B3, CVM, BACEN)..."):
+            sim_res = get_simulated_portfolio_data(parsed_holdings, user_profile, plan["allocations"])
+
+        if sim_res and "summary" in sim_res:
+            s_sum = sim_res["summary"]
+            s_positions = sim_res["positions"]
+            s_align = sim_res["alignment"]
+
+            st.markdown("---")
+            st.markdown("### 📊 Visão Consolidada da Sua Carteira Montada")
+
+            k1, k2, k3, k4, k5, k6 = st.columns(6)
+            with k1:
+                st.metric(
+                    "Custo Total Investido",
+                    f"R$ {s_sum['total_invested_cost']:,.2f}",
+                    f"{s_sum['num_positions']} posições ativas"
+                )
+            with k2:
+                st.metric(
+                    "Valor de Mercado Hoje",
+                    f"R$ {s_sum['total_current_value']:,.2f}",
+                    f"{s_sum['total_pnl_pct']:+.2f}% acumulado"
+                )
+            with k3:
+                st.metric(
+                    "Lucro / Prejuízo Aberto",
+                    f"R$ {s_sum['total_pnl_brl']:+,.2f}",
+                    "Resultado de Capital"
+                )
+            with k4:
+                st.metric(
+                    "Dividendos 12m & Yield on Cost",
+                    f"R$ {s_sum['total_annual_dividends_brl']:,.2f}/ano",
+                    f"YoC: {s_sum['weighted_yoc_pct']}% | DY Atual: {s_sum['weighted_dy_current']}%"
+                )
+            with k5:
+                st.metric(
+                    "Score Macro da Carteira",
+                    f"{s_sum['weighted_score']}/100",
+                    f"Confiança: {s_sum['weighted_confidence']}%"
+                )
+            with k6:
+                hhi_label = "Diversificada" if s_sum["hhi_index"] <= 2500 else "Concentrada"
+                st.metric(
+                    "Concentração (HHI) & Upside",
+                    f"{s_sum['hhi_index']} pts ({hhi_label})",
+                    f"Upside aos Alvos: +{s_sum['weighted_upside_pct']}%"
+                )
+
+            # Abas Internas do Painel de Simulação
+            sim_tab_actions, sim_tab_compare, sim_tab_mc, sim_tab_bt, sim_tab_events = st.tabs([
+                "🧭 1. Como Atuar Agora (Por Ação)",
+                "🔄 2. Sua Carteira vs. Ideal de Hoje",
+                "🎲 3. Monte Carlo & Projeções da Sua Carteira",
+                "⏪ 4. Backtesting Histórico da Sua Carteira",
+                "📡 5. Risco Eleitoral & Geopolítico da Sua Carteira"
+            ])
+
+            # ------------------------------------------------------------------
+            # SUB-ABA 1: COMO ATUAR AGORA POR AÇÃO
+            # ------------------------------------------------------------------
+            with sim_tab_actions:
+                st.subheader("🧭 Diagnóstico Individual e Recomendação de Atuação no Itaú")
+
+                ac = s_sum["action_counts"]
+                a1, a2, a3, a4, a5 = st.columns(5)
+                with a1:
+                    st.metric("✅ Manter (Hold)", f"{ac['manter']} ação(ões)")
+                with a2:
+                    st.metric("🛒 Comprar Mais (Aporte)", f"{ac['aportar']} ação(ões)")
+                with a3:
+                    st.metric("🎯 Realizar Lucro", f"{ac['realizar_lucro']} ação(ões)")
+                with a4:
+                    st.metric("⚖️ Rebalancear Peso", f"{ac['rebalancear']} ação(ões)")
+                with a5:
+                    st.metric("🛑 Alerta Stop / Defesa", f"{ac['reduzir_stop']} ação(ões)")
+
+                sim_table_rows = []
+                for p in s_positions:
+                    sim_table_rows.append({
+                        "Ação": p["ticker"],
+                        "Empresa": p["name"],
+                        "Qtd": p["shares_count"],
+                        "Preço Médio": f"R$ {p['avg_price']:.2f}",
+                        "Preço Hoje": f"R$ {p['current_price']:.2f}",
+                        "Saldo Hoje": f"R$ {p['current_value']:,.2f}",
+                        "Peso (%)": f"{p['weight_pct']}%",
+                        "Lucro/Prej (R$)": f"R$ {p['pnl_brl']:+,.2f}",
+                        "Rentab. (%)": f"{p['pnl_pct']:+.2f}%",
+                        "Yield on Cost": f"{p['yield_on_cost_pct']:.2f}%",
+                        "Score Hoje": f"{p['score']:.1f}/100",
+                        "Novo Alvo": f"R$ {p['target_price']:.2f}",
+                        "Stop Proteção": f"R$ {p['stop_loss_price']:.2f}",
+                        "Como Atuar Agora": p["action_badge"],
+                    })
+                st.dataframe(pd.DataFrame(sim_table_rows), use_container_width=True, hide_index=True)
+
+                st.markdown("---")
+                st.markdown("### 📋 Parecer Técnico e Instrução de Boleta por Posição")
+                for p in s_positions:
+                    box_text = f"""
+                    **{p['ticker']} ({p['name']}) — {p['action_badge']}** *(Prioridade: {p['action_priority']})*
+                    - **Sua Posição:** `{p['shares_count']} ações` compradas a **R$ {p['avg_price']:.2f}** (Custo: R$ {p['invested_cost']:,.2f}) $\\rightarrow$ **Cotação Hoje: R$ {p['current_price']:.2f}** (Valor: **R$ {p['current_value']:,.2f}** | Resultado: **{p['pnl_pct']:+.2f}% / R$ {p['pnl_brl']:+,.2f}**)
+                    - **Proventos da Sua Posição:** Receita anual estimada de **R$ {p['annual_dividends_brl']:,.2f}** (*Yield on Cost* de **{p['yield_on_cost_pct']:.2f}% a.a.** sobre seu preço pago | DY atual de {p['dividend_yield']}%).
+                    - **📱 O Que Fazer no App do Itaú:** `{p['summary_command']}`
+                    - **🧠 Parecer do Sistema:** {p['rationale']}
+                    """
+                    if p["alert_type"] == "error":
+                        st.error(box_text)
+                    elif p["alert_type"] == "warning":
+                        st.warning(box_text)
+                    elif p["alert_type"] == "info":
+                        st.info(box_text)
+                    else:
+                        st.success(box_text)
+
+            # ------------------------------------------------------------------
+            # SUB-ABA 2: COMPARATIVO SUA CARTEIRA VS CARTEIRA IDEAL DE HOJE
+            # ------------------------------------------------------------------
+            with sim_tab_compare:
+                st.subheader("🔄 Comparativo: Sua Carteira Anterior vs. Carteira Recomendada Hoje")
+                st.markdown("""
+                É muito comum que, de um mês para o outro, as cotações oscilem e o ranking das Top 5 mude levemente.
+                **Atenção:** No investimento fundamentalista de longo prazo, **você NÃO deve girar a carteira inteira todo mês**! 
+                Trocas só devem ocorrer quando uma ação atinge o Preço-Alvo (realização de lucro) ou perde fundamentos (Score < 62).
+                """)
+
+                col_cmp1, col_cmp2 = st.columns(2)
+                with col_cmp1:
+                    st.markdown("#### 💼 Métricas da Sua Carteira Montada")
+                    st.markdown(f"""
+                    - **Score Macro Ponderado:** `{s_sum['weighted_score']}/100`
+                    - **Dividend Yield Atual Ponderado:** `{s_sum['weighted_dy_current']}% a.a.`
+                    - **Yield on Cost (Sobre seu Preço Médio):** `{s_sum['weighted_yoc_pct']}% a.a.`
+                    - **Potencial Médio até os Novos Alvos:** `+{s_sum['weighted_upside_pct']}%`
+                    - **Índice de Concentração HHI:** `{s_sum['hhi_index']} pts`
+                    """)
+                    fig_user_pie = px.pie(
+                        pd.DataFrame(s_positions),
+                        names="ticker",
+                        values="current_value",
+                        title="Pesos Atuais da Sua Carteira",
+                        hole=0.45,
+                        color_discrete_sequence=px.colors.qualitative.Prism
+                    )
+                    fig_user_pie.update_layout(height=300, margin=dict(t=40, b=10, l=10, r=10))
+                    st.plotly_chart(fig_user_pie, use_container_width=True)
+
+                with col_cmp2:
+                    st.markdown("#### 🏆 Métricas da Carteira Ideal de Hoje (Top 5)")
+                    rec_score_avg = round(sum(a["score"] for a in plan["allocations"]) / max(1, len(plan["allocations"])), 1)
+                    st.markdown(f"""
+                    - **Score Macro Ponderado:** `{rec_score_avg}/100`
+                    - **Dividend Yield Atual Ponderado:** `{plan['portfolio_dividend_yield']}% a.a.`
+                    - **Potencial Médio até os Alvos:** `+{plan['portfolio_expected_upside']}%`
+                    - **Índice de Concentração HHI:** `2000 pts (Equilíbrio Ideal)`
+                    - **Ativos no Top 5 Hoje:** `{', '.join(a['ticker'] for a in plan['allocations'])}`
+                    """)
+                    fig_rec_pie = px.pie(
+                        pd.DataFrame(plan["allocations"]),
+                        names="ticker",
+                        values="invested_amount",
+                        title="Pesos da Carteira Ideal de Hoje",
+                        hole=0.45,
+                        color_discrete_sequence=px.colors.qualitative.Safe
+                    )
+                    fig_rec_pie.update_layout(height=300, margin=dict(t=40, b=10, l=10, r=10))
+                    st.plotly_chart(fig_rec_pie, use_container_width=True)
+
+                st.markdown("---")
+                c_al1, c_al2 = st.columns(2)
+                with c_al1:
+                    st.markdown("#### 🔍 Ativos da Sua Carteira Fora do Top 5 Atual")
+                    if s_align["outside_top_picks"]:
+                        for out_p in s_align["outside_top_picks"]:
+                            st.info(
+                                f"**{out_p['ticker']} ({out_p['name']})** — Score Atual: **{out_p['score']}/100** | "
+                                f"Seu P&L: **{out_p['pnl_pct']:+.1f}%** | Recomendação: **{out_p['action_badge']}**"
+                            )
+                    else:
+                        st.success("100% dos ativos da sua carteira estão exatamente dentro do Top 5 recomendado hoje!")
+
+                with c_al2:
+                    st.markdown("#### 🌟 Novas Candidatas do Top 5 Hoje (Para Novos Aportes)")
+                    if s_align["new_top_picks"]:
+                        for new_p in s_align["new_top_picks"]:
+                            st.success(
+                                f"**{new_p['ticker']} ({new_p['name']})** — Score: **{new_p['score']}/100** | "
+                                f"Cotação: **R$ {new_p['current_price']:.2f}** | DY: **{new_p['dividend_yield']}%** | "
+                                f"Alvo: **R$ {new_p['target_price']:.2f} (+{new_p['potential_gain_pct']}%)**"
+                            )
+                    else:
+                        st.info("Você já possui todas as ações do Top 5 atual na sua carteira!")
+
+            # ------------------------------------------------------------------
+            # SUB-ABA 3: MONTE CARLO & PROJEÇÕES DA SUA CARTEIRA MONTADA
+            # ------------------------------------------------------------------
+            with sim_tab_mc:
+                st.subheader("🎲 Simulação de Monte Carlo & Efeito Bola de Neve da Sua Carteira")
+                selic_sim = macro.get("selic_rate", 13.75)
+
+                mc_sim_engine = MonteCarloEngine(n_simulations=1000, n_days=252)
+                with st.spinner("Executando 1.000 simulações estocásticas de Monte Carlo para a sua carteira..."):
+                    user_mc = mc_sim_engine.run_simulation(
+                        allocations=s_positions,
+                        initial_capital=s_sum["total_current_value"],
+                        cdi_annual=selic_sim
+                    )
+
+                if user_mc:
+                    um1, um2, um3, um4, um5 = st.columns(5)
+                    with um1:
+                        st.metric("Média Projetada (1 Ano)", f"R$ {user_mc['mean_final_value']:,.2f}", f"{user_mc['expected_return_pct']:+.1f}% a.a.")
+                    with um2:
+                        st.metric("Desvio Padrão (Risco)", f"± R$ {user_mc['std_deviation_brl']:,.2f}", f"Vol: {user_mc['volatility_annual_pct']}% a.a.")
+                    with um3:
+                        st.metric("Mediana (P50)", f"R$ {user_mc['p50_median']:,.2f}", "Cenário Central")
+                    with um4:
+                        st.metric("Probabilidade de Lucro", f"{user_mc['prob_profit_pct']}%", "Win Rate 12m")
+                    with um5:
+                        st.metric("VaR 95% (Pior 5%)", f"R$ {user_mc['p5_pessimistic']:,.2f}", f"Risco Cauda: -R$ {user_mc['var_95_brl']:,.2f}")
+
+                    pct_u = user_mc["percentiles_over_time"]
+                    fig_ufan = go.Figure()
+                    fig_ufan.add_trace(go.Scatter(
+                        x=pct_u["Day"] + pct_u["Day"][::-1],
+                        y=pct_u["P95"] + pct_u["P5"][::-1],
+                        fill="toself",
+                        fillcolor="rgba(236, 112, 0, 0.14)",
+                        line=dict(color="rgba(255,255,255,0)"),
+                        name="Intervalo 90% (P5 - P95)"
+                    ))
+                    fig_ufan.add_trace(go.Scatter(
+                        x=pct_u["Day"],
+                        y=pct_u["P50"],
+                        mode="lines",
+                        line=dict(color="#EC7000", width=3),
+                        name="Mediana P50 da Sua Carteira"
+                    ))
+                    fig_ufan.add_hline(y=s_sum["total_current_value"], line_dash="dash", line_color="#6c757d", annotation_text="Saldo Atual")
+                    fig_ufan.update_layout(
+                        title="Cone de Incerteza de Monte Carlo (252 Pregões) — Sua Carteira Montada",
+                        xaxis_title="Dias Úteis Futuros",
+                        yaxis_title="Valor Projetado da Carteira (R$)",
+                        height=380,
+                        template="plotly_white"
+                    )
+                    st.plotly_chart(fig_ufan, use_container_width=True)
+
+                st.markdown("---")
+                st.markdown("#### 🔄 Projeção de Reinvestimento de Dividendos (5 Anos) da Sua Carteira")
+                proj_sim_engine = ProjectionEngine()
+                df_u_growth = proj_sim_engine.simulate_long_term_growth(
+                    initial_capital=s_sum["total_current_value"],
+                    monthly_contribution=0.0,
+                    dividend_yield_annual=s_sum["weighted_dy_current"],
+                    growth_annual=6.0,
+                    cdi_annual=selic_sim,
+                    years=5,
+                    reinvest_dividends=True
+                )
+                fig_u_proj = go.Figure()
+                fig_u_proj.add_trace(go.Scatter(x=df_u_growth["Ano"], y=df_u_growth["Carteira Ações"], mode="lines+markers", name="Sua Carteira (c/ Reinvestimento)", line=dict(color="#28a745", width=3)))
+                fig_u_proj.add_trace(go.Scatter(x=df_u_growth["Ano"], y=df_u_growth["Cofrinho CDI"], mode="lines+markers", name="CDI Líquido", line=dict(color="#EC7000", width=2, dash="dash")))
+                fig_u_proj.update_layout(height=340, template="plotly_white", title="Projeção Composta de 5 Anos do Saldo Atual")
+                st.plotly_chart(fig_u_proj, use_container_width=True)
+
+            # ------------------------------------------------------------------
+            # SUB-ABA 4: BACKTESTING HISTÓRICO DA SUA CARTEIRA MONTADA
+            # ------------------------------------------------------------------
+            with sim_tab_bt:
+                st.subheader("⏪ Backtesting Histórico da Sua Carteira Montada (1A, 2A, 3A e 5A)")
+                selic_ubt = macro.get("selic_rate", 13.75)
+                with st.spinner("Calculando desempenho histórico de 1 a 5 anos da composição da sua carteira..."):
+                    user_bt = get_backtest_data(s_positions, s_sum["total_current_value"], selic_ubt)
+
+                if user_bt and "generalized" in user_bt:
+                    ugen = user_bt["generalized"]
+                    ub1, ub2, ub3, ub4, ub5 = st.columns(5)
+                    with ub1:
+                        st.metric("Retorno 5 Anos da Composição", f"+{ugen['five_year_return_pct']}%", f"R$ {ugen['five_year_final_brl']:,.2f}")
+                    with ub2:
+                        st.metric("Alpha 5 Anos vs Ibovespa", f"{ugen['five_year_alpha_ibov_pct']:+.1f}% p.p.", "Acima do Índice B3")
+                    with ub3:
+                        st.metric("CAGR Médio Generalizado", f"{ugen['avg_cagr_pct']}% a.a.", f"Vol: {ugen['avg_volatility_pct']}%")
+                    with ub4:
+                        st.metric("Profit Factor & Win Rate", f"{ugen['avg_profit_factor']}x", f"Win Rate: {ugen['avg_win_rate_monthly_pct']}% meses")
+                    with ub5:
+                        st.metric("Beta & Max Drawdown", f"Beta {ugen['avg_realized_beta']}", f"Max DD: {ugen['worst_drawdown_port_pct']}%")
+
+                    st.dataframe(pd.DataFrame(user_bt["summary_table"]), use_container_width=True, hide_index=True)
+
+                    u_scen_keys = list(user_bt["scenarios"].keys())
+                    sel_u_scen = st.selectbox(
+                        "Selecione a janela histórica para visualizar a curva da sua carteira:",
+                        options=u_scen_keys,
+                        index=len(u_scen_keys) - 1,
+                        key="user_bt_scen_select"
+                    )
+                    u_scen_data = user_bt["scenarios"][sel_u_scen]
+                    u_curves = u_scen_data["curves_df"]
+                    fig_ueq = go.Figure()
+                    fig_ueq.add_trace(go.Scatter(x=u_curves["Data"], y=u_curves["Carteira Recomendada (R$)"], mode="lines", name="Sua Carteira (R$)", line=dict(color="#28a745", width=3)))
+                    fig_ueq.add_trace(go.Scatter(x=u_curves["Data"], y=u_curves["CDI Líquido (R$)"], mode="lines", name="CDI Líquido (R$)", line=dict(color="#EC7000", width=2, dash="dash")))
+                    fig_ueq.add_trace(go.Scatter(x=u_curves["Data"], y=u_curves["Ibovespa (R$)"], mode="lines", name="Ibovespa (R$)", line=dict(color="#6c757d", width=2)))
+                    fig_ueq.update_layout(height=380, template="plotly_white", title=f"Backtest Histórico da Sua Carteira — {sel_u_scen}")
+                    st.plotly_chart(fig_ueq, use_container_width=True)
+
+            # ------------------------------------------------------------------
+            # SUB-ABA 5: SENSIBILIDADE DA SUA CARTEIRA A ELEIÇÕES E GEOPOLÍTICA
+            # ------------------------------------------------------------------
+            with sim_tab_events:
+                st.subheader("📡 Teste de Estresse Eleitoral & Geopolítico na Sua Carteira")
+                ev_sim_eng = EventRadarEngine()
+                u_ev_radar = get_event_radar_data(s_positions)
+                u_avail_scen = u_ev_radar["default_simulation"]["available_scenarios"]
+                sel_u_ev = st.selectbox(
+                    "Simular impacto de evento agudo sobre as posições da sua carteira:",
+                    options=u_avail_scen,
+                    index=0,
+                    key="user_ev_scen_select"
+                )
+                u_ev_out = ev_sim_eng.simulate_event_impact_on_portfolio(s_positions, sel_u_ev)
+
+                ue1, ue2, ue3, ue4 = st.columns(4)
+                with ue1:
+                    st.metric("Impacto na Sua Carteira", f"{u_ev_out['portfolio_impact_pct']:+.2f}%", f"R$ {u_ev_out['portfolio_impact_brl']:+,.2f}")
+                with ue2:
+                    st.metric("Saldo Estimado Pós-Choque", f"R$ {u_ev_out['portfolio_final_brl']:,.2f}", "Valor Projetado")
+                with ue3:
+                    st.metric("Impacto no Ibovespa", f"{u_ev_out['ibov_impact_pct']:+.2f}%", f"R$ {u_ev_out['ibov_impact_brl']:+,.2f}")
+                with ue4:
+                    st.metric("Blindagem Relativa vs Ibov", f"{u_ev_out['relative_protection_pct']:+.2f}% p.p.", "Diferencial de Defesa")
+
+                st.info(u_ev_out["tactical_recommendation"])
+                st.dataframe(pd.DataFrame(u_ev_out["asset_impacts"]), use_container_width=True, hide_index=True)
 
 
 # ==============================================================================

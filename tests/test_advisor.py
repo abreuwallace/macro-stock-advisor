@@ -17,6 +17,7 @@ from engines.robustness_diagnostic import RobustnessDiagnostic
 from engines.opportunity_engine import OpportunityEngine
 from engines.backtest_engine import BacktestEngine
 from engines.event_radar_engine import EventRadarEngine
+from engines.portfolio_simulator_engine import PortfolioSimulatorEngine
 
 class TestMacroAdvisor(unittest.TestCase):
 
@@ -264,6 +265,21 @@ class TestMacroAdvisor(unittest.TestCase):
         self.assertEqual(len(radar["cyclical_events"]), 5)
         self.assertEqual(len(radar["contingent_events"]), 5)
         self.assertGreater(radar["default_simulation"]["relative_protection_pct"], 0.0)
+
+    def test_portfolio_simulator_engine(self):
+        engine = PortfolioSimulatorEngine()
+        holdings = [
+            {"ticker": "TAEE11", "shares": 100, "avg_price": 38.00},
+            {"ticker": "CXSE3", "shares": 220, "avg_price": 16.50},
+            {"ticker": "BBAS3", "shares": 170, "avg_price": 23.00},
+        ]
+        res = engine.evaluate_user_portfolio(holdings)
+        self.assertIn("positions", res)
+        self.assertIn("summary", res)
+        self.assertEqual(len(res["positions"]), 3)
+        self.assertGreater(res["summary"]["total_current_value"], 0.0)
+        self.assertIn("action_badge", res["positions"][0])
+        self.assertIn("summary_command", res["positions"][0])
 
 if __name__ == "__main__":
     unittest.main()
