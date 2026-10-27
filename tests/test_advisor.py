@@ -14,6 +14,7 @@ from ai.report_agent import ReportAgent
 from engines.projections import ProjectionEngine
 from engines.monte_carlo import MonteCarloEngine
 from engines.robustness_diagnostic import RobustnessDiagnostic
+from engines.opportunity_engine import OpportunityEngine
 
 class TestMacroAdvisor(unittest.TestCase):
 
@@ -219,6 +220,18 @@ class TestMacroAdvisor(unittest.TestCase):
         self.assertEqual(res["hhi_index"], 2000)
         self.assertEqual(len(res["sensitivity_tests"]), 4)
         self.assertEqual(len(res["confidence_audit"]), 5)
+
+    def test_opportunity_engine(self):
+        engine = OpportunityEngine()
+        opps = engine.scan_opportunities()
+        self.assertGreater(len(opps), 0)
+        top = opps[0]
+        self.assertIn("ticker", top)
+        self.assertIn("drawdown_pct", top)
+        self.assertIn("turnaround_catalysts", top)
+        self.assertIn("asymmetry_ratio", top)
+        self.assertGreater(top["upside_pct"], 30.0)
+        self.assertGreaterEqual(top["confidence_score"], 65.0)
 
 if __name__ == "__main__":
     unittest.main()

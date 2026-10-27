@@ -116,3 +116,4 @@ class RobustnessDiagnostic:
             "limitations": limitations,
             "overall_robustness_score": 92.5  # Escala de 0 a 100
         }
+

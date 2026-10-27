@@ -14,6 +14,7 @@ from config.settings import SETTINGS
 from engines.projections import ProjectionEngine
 from engines.monte_carlo import MonteCarloEngine
 from engines.robustness_diagnostic import RobustnessDiagnostic
+from engines.opportunity_engine import OpportunityEngine
 
 # Configuração da Página Streamlit
 st.set_page_config(
@@ -136,8 +137,9 @@ st.markdown(
 )
 
 # Abas de Navegação
-tab_portfolio, tab_projections, tab_diagnostic, tab_macro, tab_reports, tab_guide = st.tabs([
+tab_portfolio, tab_opportunities, tab_projections, tab_diagnostic, tab_macro, tab_reports, tab_guide = st.tabs([
     "💼 Carteira Recomendada (R$ 20k)",
+    "🔥 Oportunidades & Turnaround",
     "🎲 Projeções & Monte Carlo",
     "🔬 Autodiagnóstico & Confiança",
     "🌍 Cenário Macroeconômico",
@@ -213,7 +215,145 @@ with tab_portfolio:
             """)
 
 # ==========================================
-# ABA 2: PROJEÇÕES & SIMULAÇÃO FINANCEIRA
+# ABA 2: OPORTUNIDADES & TURNAROUND (QUEDAS BRUSCAS)
+# ==========================================
+with tab_opportunities:
+    st.subheader("🔥 Oportunidades Assimétricas: Quedas Bruscas com Potencial de Multiplicação (2x a 3x)")
+    
+    st.markdown("""
+    Esta aba mapeia ações de **empresas consolidadas e líderes em seus segmentos** que sofreram **quedas severas (-40% a -75%)** 
+    devido ao choque de juros altos ou desconfiança passageira do mercado, mas que possuem **ativos reais valiosos, solvência financeira comprovada 
+    e alta probabilidade de reprecificação acelerada**.
+    """)
+    
+    st.warning("""
+    ⚠️ **Diretriz de Gestão de Risco:** 
+    A carteira principal de R$ 20.000 deve permanecer concentrada na aba defensiva (*Dividendos & Qualidade*). 
+    Se você optar por investir em oportunidades de multiplicação, a recomendação é alocar uma **fatia tática pequena (ex: R$ 1.500 a R$ 3.000)** 
+    para buscar assimetria convexa (ganho de +70% a +130%) com perda máxima estritamente limitada por stop loss.
+    """)
+    
+    opp_engine = OpportunityEngine()
+    with st.spinner("Analisando quedas históricas, múltiplos comprimidos e solvência na B3..."):
+        opportunities = opp_engine.scan_opportunities()
+
+    if opportunities:
+        top_opp = opportunities[0]
+        o1, o2, o3, o4 = st.columns(4)
+        with o1:
+            st.metric("Oportunidade de Maior Assimetria", f"{top_opp['ticker']}", f"{top_opp['asymmetry_ratio']}:1 Risco/Retorno")
+        with o2:
+            st.metric("Maior Potencial de Alta", f"+{top_opp['upside_pct']}%", f"{top_opp['multiplier_x']}x de multiplicação")
+        with o3:
+            st.metric("Maior Queda Acumulada", f"{top_opp['drawdown_pct']}%", "Desde máxima de 2 anos")
+        with o4:
+            st.metric("Confiança do Turnaround", f"{top_opp['confidence_score']}%", "Filtro Anti-Falência OK")
+
+        st.markdown("---")
+        
+        # Tabela Geral de Oportunidades
+        st.markdown("### 📊 Painel Geral de Quedas Bruscas & Potencial de Virada")
+        opp_table = []
+        for o in opportunities:
+            opp_table.append({
+                "Ação": o["ticker"],
+                "Empresa": o["name"],
+                "Setor": o["sector"],
+                "Preço Atual": f"R$ {o['current_price']:.2f}",
+                "Queda 2 Anos": f"{o['drawdown_pct']}%",
+                "Preço-Alvo Virada": f"R$ {o['target_recovery_price']:.2f}",
+                "Potencial de Alta": f"+{o['upside_pct']}%",
+                "Multiplicação": f"{o['multiplier_x']}x",
+                "P/VP": f"{o['pb_ratio']}x" if o["pb_ratio"] else "N/D",
+                "Assimetria (R/R)": f"{o['asymmetry_ratio']}:1",
+                "Confiança": f"{o['confidence_score']}%"
+            })
+        st.dataframe(pd.DataFrame(opp_table), use_container_width=True, hide_index=True)
+
+        st.markdown("---")
+
+        # Detalhamento da Tese de Recuperação
+        st.markdown("### 🔍 Análise Detalhada: Por que Caiu e Por que Voltará a Subir?")
+        
+        selected_opp_ticker = st.selectbox(
+            "Selecione uma ação para auditar os catalisadores de virada:",
+            options=[o["ticker"] for o in opportunities]
+        )
+        selected_opp = next(o for o in opportunities if o["ticker"] == selected_opp_ticker)
+        
+        col_opp_info, col_opp_chart = st.columns([1.1, 0.9])
+        
+        with col_opp_info:
+            st.markdown(f"#### 🏷️ {selected_opp['name']} ({selected_opp['ticker']}) — *{selected_opp['thesis_type']}*")
+            
+            st.error(f"**📉 Por que caiu tanto ({selected_opp['drawdown_pct']}%)?**\n\n{selected_opp['why_it_fell']}")
+            
+            st.success(f"**🛡️ Filtro de Sobrevivência & Solvência (Por que não quebra?):**\n\n{selected_opp['solvency_strength']}")
+            
+            st.markdown("**🚀 Catalisadores Concretos de Virada (Turnaround Triggers):**")
+            for cat in selected_opp["turnaround_catalysts"]:
+                st.markdown(f"- ✅ {cat}")
+                
+            st.warning(f"**⚠️ Ponto de Atenção e Risco Principal:** {selected_opp['key_risk']}")
+            
+            st.markdown(f"""
+            **🎯 Parâmetros Táticos no Itaú:**
+            - **Preço de Entrada:** R$ {selected_opp['current_price']:.2f}
+            - **Preço-Alvo de Recuperação:** **R$ {selected_opp['target_recovery_price']:.2f} (+{selected_opp['upside_pct']}% / {selected_opp['multiplier_x']}x)**
+            - **Stop Loss Tático de Proteção:** R$ {selected_opp['stop_loss_price']:.2f} ({selected_opp['max_loss_pct']}%)
+            - **Alocação Recomendada:** `{selected_opp['suggested_pocket_allocation']}`
+            """)
+
+        with col_opp_chart:
+            st.markdown(f"#### 📉 Histórico de Queda e Preço-Alvo ({selected_opp['ticker']})")
+            try:
+                hist_opp = yf.Ticker(f"{selected_opp['ticker']}.SA").history(period="2y")
+                if not hist_opp.empty:
+                    fig_opp = go.Figure()
+                    fig_opp.add_trace(go.Scatter(
+                        x=hist_opp.index,
+                        y=hist_opp['Close'],
+                        mode='lines',
+                        name='Cotação Real B3',
+                        line=dict(color='#EC7000', width=2)
+                    ))
+                    # Máxima 2 anos
+                    fig_opp.add_hline(
+                        y=selected_opp['high_2y'],
+                        line_dash="dot",
+                        line_color="gray",
+                        annotation_text=f"Máxima 2A: R$ {selected_opp['high_2y']:.2f}",
+                        annotation_position="top left"
+                    )
+                    # Alvo de Recuperação
+                    fig_opp.add_hline(
+                        y=selected_opp['target_recovery_price'],
+                        line_dash="dash",
+                        line_color="green",
+                        annotation_text=f"Alvo Virada: R$ {selected_opp['target_recovery_price']:.2f} (+{selected_opp['upside_pct']}%)",
+                        annotation_position="bottom right"
+                    )
+                    # Stop Tático
+                    fig_opp.add_hline(
+                        y=selected_opp['stop_loss_price'],
+                        line_dash="dash",
+                        line_color="red",
+                        annotation_text=f"Stop Tático: R$ {selected_opp['stop_loss_price']:.2f}",
+                        annotation_position="bottom right"
+                    )
+                    fig_opp.update_layout(
+                        template="plotly_white",
+                        height=420,
+                        margin=dict(t=20, b=20, l=10, r=10),
+                        yaxis_title="Preço da Ação (R$)",
+                        xaxis_title="Data"
+                    )
+                    st.plotly_chart(fig_opp, use_container_width=True)
+            except Exception as e:
+                st.info(f"Visualização gráfica simplificada para {selected_opp['ticker']}.")
+
+# ==========================================
+# ABA 3: PROJEÇÕES & SIMULAÇÃO FINANCEIRA
 # ==========================================
 with tab_projections:
     st.subheader("📈 Projeções Financeiras: Da Execução do Alvo ao Efeito Bola de Neve")
