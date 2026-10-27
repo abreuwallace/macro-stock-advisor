@@ -17,6 +17,7 @@ from engines.monte_carlo import MonteCarloEngine
 from engines.robustness_diagnostic import RobustnessDiagnostic
 from engines.opportunity_engine import OpportunityEngine
 from engines.backtest_engine import BacktestEngine
+from engines.event_radar_engine import EventRadarEngine
 
 # Configuração da Página Streamlit
 st.set_page_config(
@@ -119,6 +120,12 @@ def get_backtest_data(allocations: list, capital: float, cdi_annual: float):
     bt_engine = BacktestEngine(initial_capital=capital)
     return bt_engine.run_multi_scenario_backtest(allocations, cdi_annual_avg=cdi_annual)
 
+
+@st.cache_data(ttl=900, show_spinner=False)
+def get_event_radar_data(allocations: list):
+    ev_engine = EventRadarEngine()
+    return ev_engine.get_full_event_radar(allocations)
+
 # Execução da Análise
 if refresh_btn:
     st.cache_data.clear()
@@ -165,6 +172,16 @@ if "Básico" in view_mode:
         st.metric("Total de Ações", f"{plan['num_positions']} Empresas", "Diversificação Ótima")
 
     st.markdown("---")
+
+    # Radar Executivo de Eventos Cíclicos e Geopolíticos no Painel Básico
+    basic_radar = get_event_radar_data(plan["allocations"])
+    basic_stress = basic_radar["live_stress"]
+    with st.expander(f"📡 Avisos de Eventos Cíclicos (Eleições/Balanços) & Geopolítica — Status: {basic_stress['regime_alert']}", expanded=True):
+        st.markdown(f"""
+        - **🗳️ Eventos Cíclicos Previsíveis:** `{basic_radar['cyclical_events'][0]['current_status']}` | `{basic_radar['cyclical_events'][2]['current_status']}`
+        - **🌍 Termômetro Geopolítico & Mercado em Tempo Real:** Score de Tensão **{basic_stress['stress_score']}/100** | Índice VIX: **{basic_stress['vix_level']} pts** | Petróleo Brent: **US$ {basic_stress['brent_usd']:.2f}** | Ouro Refúgio: **US$ {basic_stress['gold_usd']:.2f}**
+        - **🛡️ Diretriz Prática para sua Carteira (R$ 20.000):** Sua carteira prioriza Transmissoras de Energia (`TAEE11`, `ISAE4`) e Seguradoras (`CXSE3`, `BBSE3`) que historicamente amortecem mais de 65% dos choques eleitorais e geopolíticos. Evite enviar ordens a mercado em véspera de Copom ou apuração eleitoral; utilize sempre **Ordem Limitada** na Faixa de Entrada Ideal. *(Para explorar o simulador completo de choques eleitorais e geopolíticos, alterne para o **Painel Avançado -> aba 📡 Eventos, Eleições & Geopolítica**).*
+        """)
 
     # 1. Tabela Executiva de Ações
     st.markdown("### 📋 1. Ações Recomendadas para Comprar")
@@ -233,9 +250,10 @@ else:
         unsafe_allow_html=True
     )
 
-    # 9 Abas Avançadas
-    tab_portfolio, tab_backtest, tab_opportunities, tab_projections, tab_diagnostic, tab_unbiased, tab_macro, tab_reports, tab_guide = st.tabs([
+    # 10 Abas Avançadas
+    tab_portfolio, tab_events, tab_backtest, tab_opportunities, tab_projections, tab_diagnostic, tab_unbiased, tab_macro, tab_reports, tab_guide = st.tabs([
         "💼 Carteira Recomendada",
+        "📡 Eventos, Eleições & Geopolítica",
         "⏪ Backtesting Histórico",
         "🔥 Oportunidades & Turnaround",
         "🎲 Projeções & Monte Carlo",
@@ -308,6 +326,167 @@ else:
                   - 🎯 **Preço-Alvo de Venda:** R$ {item['target_price']:.2f}
                   - 🛑 **Stop Loss de Segurança:** R$ {item['stop_loss_price']:.2f}
                 """)
+
+    # ----------------------------------------------------
+    # ABA 2: RADAR DE EVENTOS CÍCLICOS, ELEIÇÕES & GEOPOLÍTICA
+    # ----------------------------------------------------
+    with tab_events:
+        st.subheader("📡 Radar de Eventos Cíclicos (Eleições/Copom) & Choques Imprevisíveis (Geopolítica)")
+        st.markdown("""
+        O mercado acionário sofre **quedas ou subidas bruscas** induzidas tanto por **eventos previsíveis do calendário** 
+        (*Eleições Presidenciais, reuniões do Copom/Fed, divulgação de balanços CVM e metas fiscais*) quanto por 
+        **eventos contingentes imprevisíveis** (*guerras e tensões geopolíticas, pacotes na China, ruídos em estatais e choques climáticos*). 
+        Esta aba monitora em tempo real os **termômetros globais de estresse** e entrega o **plano de ação exato** para blindar e multiplicar seus **R$ 20.000**.
+        """)
+
+        with st.spinner("Coletando indicadores globais de tensão (^VIX, Ouro, Petróleo Brent, Treasuries e Câmbio)..."):
+            ev_radar = get_event_radar_data(plan["allocations"])
+            live_stress = ev_radar["live_stress"]
+
+        st.markdown("### 🌡️ 1. Termômetro de Tensão Global & Doméstica em Tempo Real (Sem Viés)")
+        e1, e2, e3, e4, e5, e6 = st.columns(6)
+        with e1:
+            st.metric(
+                "Score Global de Tensão",
+                f"{live_stress['stress_score']}/100",
+                "Risco de Evento"
+            )
+        with e2:
+            st.metric(
+                "Índice VIX (Medo Global)",
+                f"{live_stress['vix_level']:.2f} pts",
+                f"{live_stress['vix_change_5d_pct']:+.1f}% (5 dias)"
+            )
+        with e3:
+            st.metric(
+                "Petróleo Brent (Geopolítica)",
+                f"US$ {live_stress['brent_usd']:.2f}",
+                f"{live_stress['brent_change_20d_pct']:+.1f}% (20 dias)"
+            )
+        with e4:
+            st.metric(
+                "Ouro Refúgio (GC=F)",
+                f"US$ {live_stress['gold_usd']:,.1f}",
+                f"{live_stress['gold_change_20d_pct']:+.1f}% (20 dias)"
+            )
+        with e5:
+            st.metric(
+                "Treasury 10Y (EUA)",
+                f"{live_stress['us10y_yield']:.2f}% a.a.",
+                "Custo Global de Capital"
+            )
+        with e6:
+            st.metric(
+                "Volatilidade do Dólar (20d)",
+                f"{live_stress['usd_volatility_20d_pct']:.1f}% a.a.",
+                f"Spot: R$ {live_stress['usd_brl']:.2f}"
+            )
+
+        if live_stress["alert_color"] == "error":
+            st.error(f"🚨 **Diagnóstico Atual do Radar:** **{live_stress['regime_alert']}** — Mantenha rigor absoluto nos preços de entrada limitada e preserve os 80% do patrimônio (R$ 80.000) no CDI.")
+        elif live_stress["alert_color"] == "warning":
+            st.warning(f"⚠️ **Diagnóstico Atual do Radar:** **{live_stress['regime_alert']}** — Há pressão moderada em indicadores geopolíticos/cambiais. Excelente ambiente para setores defensivos pagadores de dividendos (`TAEE11`, `ISAE4`, `CXSE3`, `BBSE3`).")
+        else:
+            st.success(f"✅ **Diagnóstico Atual do Radar:** **{live_stress['regime_alert']}** — Baixa tensão sistêmica; foco na captura de dividendos e realização de preços-alvo.")
+
+        st.markdown("---")
+
+        # Seção 2: Eventos Cíclicos e Previsíveis
+        st.markdown("### 🗓️ 2. Eventos Cíclicos & Previsíveis (Eleições, Copom, Balanços CVM e Fiscal)")
+        st.markdown("Eventos com data ou janela conhecida que ciclicamente provocam forte compressão ou expansão de múltiplos na B3:")
+
+        cyc_summary = []
+        for ev in ev_radar["cyclical_events"]:
+            cyc_summary.append({
+                "Evento Cíclico": ev["event_name"],
+                "Periodicidade / Calendário": ev["category"],
+                "Status Atual": ev["current_status"],
+                "Impacto Histórico na B3": ev["historical_impact"],
+            })
+        st.dataframe(pd.DataFrame(cyc_summary), use_container_width=True, hide_index=True)
+
+        for idx, ev in enumerate(ev_radar["cyclical_events"]):
+            with st.expander(f"📌 Detalhes & Protocolo de Ação: {ev['event_name']} — [{ev['current_status']}]", expanded=(idx == 0)):
+                st.markdown(f"**⚙️ Por que induz quedas ou subidas bruscas?**\n\n{ev['why_it_moves_market']}")
+                c_vuln, c_res = st.columns(2)
+                with c_vuln:
+                    st.error(f"**📉 Setores Mais Vulneráveis:**\n\n{ev['vulnerable_sectors']}")
+                with c_res:
+                    st.success(f"**🛡️ Setores Mais Resilientes / Blindados:**\n\n{ev['resilient_sectors']}")
+                st.info(f"**🧭 Protocolo Prático para seus R$ 20.000 no Itaú:**\n\n{ev['action_protocol']}")
+
+        st.markdown("---")
+
+        # Seção 3: Eventos Contingentes / Imprevisíveis
+        st.markdown("### ⚡ 3. Eventos Contingentes & Imprevisíveis (Geopolítica, Estatais, China, Clima)")
+        st.markdown("Fatos que podem ou não eclodir a qualquer momento, monitorados pelos nossos sinais antecedentes de mercado:")
+
+        cont_summary = []
+        for cev in ev_radar["contingent_events"]:
+            cont_summary.append({
+                "Risco / Evento Contingente": cev["event_name"],
+                "Nível de Alerta Atual": cev["probability_status"],
+                "Sinais Antecipados Monitorados": cev["early_warning_signals"],
+                "Quem Protege / Ganha na B3": cev["winners_or_hedges_in_b3"],
+            })
+        st.dataframe(pd.DataFrame(cont_summary), use_container_width=True, hide_index=True)
+
+        for idx, cev in enumerate(ev_radar["contingent_events"]):
+            with st.expander(f"🔍 Plano de Contingência: {cev['event_name']} — [{cev['probability_status']}]", expanded=(idx == 0)):
+                st.markdown(f"**📡 Sinais Antecipados de Alerta:** {cev['early_warning_signals']}")
+                st.markdown(f"**💥 Mecanismo de Transmissão no Mercado:** {cev['market_shock_mechanism']}")
+                col_l, col_w = st.columns(2)
+                with col_l:
+                    st.error(f"**Quem Sofre Queda Brusca:**\n\n{cev['losers_in_b3']}")
+                with col_w:
+                    st.success(f"**Quem Funciona como Hedge / Sobe:**\n\n{cev['winners_or_hedges_in_b3']}")
+                st.warning(f"**🛡️ Plano de Contingência e Oportunidade:**\n\n{cev['contingency_plan']}")
+
+        st.markdown("---")
+
+        # Seção 4: Simulador Interativo de Choque de Evento na Carteira Recomendada
+        st.markdown("### 🧪 4. Simulador Interativo: Efeito de Eleições e Geopolítica na Sua Carteira (R$ 20.000)")
+        ev_engine_inst = EventRadarEngine()
+        avail_scen = ev_radar["default_simulation"]["available_scenarios"]
+        selected_ev_scen = st.selectbox(
+            "Selecione um cenário agudo (Eleitoral, Geopolítico ou Político) para simular o impacto ação por ação:",
+            options=avail_scen,
+            index=0,
+            key="event_shock_selector"
+        )
+        sim_out = ev_engine_inst.simulate_event_impact_on_portfolio(plan["allocations"], selected_ev_scen)
+
+        st.caption(f"**Descrição do Cenário:** {sim_out['description']}")
+
+        es1, es2, es3, es4 = st.columns(4)
+        with es1:
+            st.metric(
+                "Impacto na Sua Carteira",
+                f"{sim_out['portfolio_impact_pct']:+.2f}%",
+                f"R$ {sim_out['portfolio_impact_brl']:+,.2f}"
+            )
+        with es2:
+            st.metric(
+                "Saldo Estimado Pós-Evento",
+                f"R$ {sim_out['portfolio_final_brl']:,.2f}",
+                f"Base: R$ {plan['total_allocated']:,.2f}"
+            )
+        with es3:
+            st.metric(
+                "Impacto no Ibovespa (^BVSP)",
+                f"{sim_out['ibov_impact_pct']:+.2f}%",
+                f"R$ {sim_out['ibov_impact_brl']:+,.2f}"
+            )
+        with es4:
+            st.metric(
+                "Blindagem Relativa vs Ibov",
+                f"{sim_out['relative_protection_pct']:+.2f}% p.p.",
+                "Vantagem da Carteira"
+            )
+
+        st.info(sim_out["tactical_recommendation"])
+
+        st.dataframe(pd.DataFrame(sim_out["asset_impacts"]), use_container_width=True, hide_index=True)
 
     # ----------------------------------------------------
     # ABA 2: BACKTESTING HISTÓRICO MULTI-CENÁRIO

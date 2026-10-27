@@ -16,6 +16,7 @@ from engines.monte_carlo import MonteCarloEngine
 from engines.robustness_diagnostic import RobustnessDiagnostic
 from engines.opportunity_engine import OpportunityEngine
 from engines.backtest_engine import BacktestEngine
+from engines.event_radar_engine import EventRadarEngine
 
 class TestMacroAdvisor(unittest.TestCase):
 
@@ -249,6 +250,20 @@ class TestMacroAdvisor(unittest.TestCase):
         self.assertEqual(len(res["summary_table"]), 4)
         self.assertGreater(res["generalized"]["five_year_return_pct"], 50.0)
         self.assertGreater(res["generalized"]["avg_profit_factor"], 1.0)
+
+    def test_event_radar_engine(self):
+        engine = EventRadarEngine()
+        mock_alloc = [
+            {"ticker": "TAEE11", "name": "Taesa", "sector": "Utilities", "invested_amount": 10000.0},
+            {"ticker": "BBSE3", "name": "BB Seguridade", "sector": "Financeiro", "invested_amount": 10000.0},
+        ]
+        radar = engine.get_full_event_radar(mock_alloc)
+        self.assertIn("live_stress", radar)
+        self.assertIn("cyclical_events", radar)
+        self.assertIn("contingent_events", radar)
+        self.assertEqual(len(radar["cyclical_events"]), 5)
+        self.assertEqual(len(radar["contingent_events"]), 5)
+        self.assertGreater(radar["default_simulation"]["relative_protection_pct"], 0.0)
 
 if __name__ == "__main__":
     unittest.main()

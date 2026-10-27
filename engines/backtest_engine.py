@@ -282,3 +282,4 @@ if __name__ == "__main__":
     print("Generalized Metrics:", res["generalized"])
     for row in res["summary_table"]:
         print(row)
+
