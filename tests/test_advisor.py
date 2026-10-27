@@ -15,6 +15,7 @@ from engines.projections import ProjectionEngine
 from engines.monte_carlo import MonteCarloEngine
 from engines.robustness_diagnostic import RobustnessDiagnostic
 from engines.opportunity_engine import OpportunityEngine
+from engines.backtest_engine import BacktestEngine
 
 class TestMacroAdvisor(unittest.TestCase):
 
@@ -232,6 +233,22 @@ class TestMacroAdvisor(unittest.TestCase):
         self.assertIn("asymmetry_ratio", top)
         self.assertGreater(top["upside_pct"], 30.0)
         self.assertGreaterEqual(top["confidence_score"], 65.0)
+
+    def test_backtest_engine(self):
+        engine = BacktestEngine(initial_capital=20_000.0)
+        mock_alloc = [
+            {"ticker": "BBAS3", "invested_amount": 5000.0},
+            {"ticker": "TAEE11", "invested_amount": 5000.0},
+            {"ticker": "BBSE3", "invested_amount": 5000.0},
+            {"ticker": "CXSE3", "invested_amount": 5000.0},
+        ]
+        res = engine.run_multi_scenario_backtest(mock_alloc, cdi_annual_avg=12.0)
+        self.assertIn("scenarios", res)
+        self.assertIn("summary_table", res)
+        self.assertIn("generalized", res)
+        self.assertEqual(len(res["summary_table"]), 4)
+        self.assertGreater(res["generalized"]["five_year_return_pct"], 50.0)
+        self.assertGreater(res["generalized"]["avg_profit_factor"], 1.0)
 
 if __name__ == "__main__":
     unittest.main()
