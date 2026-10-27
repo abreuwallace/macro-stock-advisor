@@ -1,6 +1,8 @@
 """
 Testes Automatizados para o Robô de Recomendação Macro (B3).
 """
+import os
+import tempfile
 import unittest
 from config.settings import SETTINGS
 from collectors.macro_collector import MacroCollector
@@ -18,6 +20,10 @@ from engines.opportunity_engine import OpportunityEngine
 from engines.backtest_engine import BacktestEngine
 from engines.event_radar_engine import EventRadarEngine
 from engines.portfolio_simulator_engine import PortfolioSimulatorEngine
+from engines.onboarding_engine import OnboardingEngine
+from monetization.saas_engine import SaaSMonetizationEngine
+from storage.database import SaaSDatabase
+from utils.exporter import ReportExporter
 
 class TestMacroAdvisor(unittest.TestCase):
 
@@ -280,6 +286,87 @@ class TestMacroAdvisor(unittest.TestCase):
         self.assertGreater(res["summary"]["total_current_value"], 0.0)
         self.assertIn("action_badge", res["positions"][0])
         self.assertIn("summary_command", res["positions"][0])
+
+    def test_database_persistence(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_file = os.path.join(tmpdir, "test_saas.db")
+            db = SaaSDatabase(db_path=db_file)
+            ok = db.save_portfolio(
+                user_key="user_teste_1",
+                portfolio_name="Carteira Teste",
+                broker="XP Investimentos",
+                holdings=[{"Ticker (B3)": "TAEE11", "Quantidade": 100, "Preço Médio (R$)": 35.0}]
+            )
+            self.assertTrue(ok)
+            loaded = db.load_portfolio("user_teste_1")
+            self.assertIsNotNone(loaded)
+            self.assertEqual(loaded["broker"], "XP Investimentos")
+            self.assertEqual(len(loaded["holdings"]), 1)
+
+            lead_ok = db.register_lead("Ana Teste", "ana@teste.com.br", "(11) 99999-1111", "BTG Pactual", "Iniciante", "free")
+            self.assertTrue(lead_ok)
+            leads = db.list_leads()
+            self.assertGreaterEqual(len(leads), 1)
+
+    def test_onboarding_and_broker_guides(self):
+        engine = OnboardingEngine()
+        plan = engine.calculate_financial_plan(
+            monthly_income=10000.0,
+            monthly_expenses=5000.0,
+            total_patrimony=100000.0,
+            job_stability="Moderada (CLT Privado)",
+            experience_level="Iniciante"
+        )
+        self.assertEqual(plan["ideal_emergency_reserve_brl"], 30000.0)
+        self.assertEqual(plan["reserve_coverage_pct"], 100.0)
+        self.assertGreater(plan["suggested_equity_capital_brl"], 0.0)
+        for broker in ["Itaú / Íon Itaú", "XP Investimentos", "BTG Pactual", "Nubank / NuInvest", "Banco Inter"]:
+            guide = engine.get_broker_guide(broker)
+            self.assertIn("step_by_step", guide)
+
+    def test_saas_monetization_engine(self):
+        saas = SaaSMonetizationEngine()
+        free_p = saas.get_tier_permissions("free")
+        pro_p = saas.get_tier_permissions("pro")
+        founder_p = saas.get_tier_permissions("founder")
+        self.assertFalse(free_p["is_premium"])
+        self.assertTrue(pro_p["is_premium"])
+        self.assertTrue(founder_p["is_founder"])
+        self.assertEqual(free_p["max_visible_recommendations"], 3)
+        self.assertTrue(saas.validate_access_code("PRO-VIP-2026"))
+        econ = saas.calculate_saas_unit_economics(monthly_visitors=5000, pro_conversion_pct=3.0)
+        self.assertGreater(econ["net_monthly_profit"], 1000.0)
+        self.assertEqual(len(econ["projection_12m"]), 12)
+
+    def test_report_exporter(self):
+        exporter = ReportExporter()
+        sample_rows = [{
+            "ticker": "TAEE11",
+            "name": "Taesa",
+            "sector": "Utilities",
+            "current_price": 38.0,
+            "shares_count": 100,
+            "invested_amount": 3800.0,
+            "entry_action": "Comprar até R$ 38.20",
+            "target_price": 45.0,
+            "potential_gain_pct": 18.4,
+            "stop_loss_price": 35.5,
+            "max_loss_pct": -6.5,
+            "dividend_yield": 9.1,
+            "confidence_pct": 88,
+        }]
+        csv_str = exporter.export_allocations_to_csv(sample_rows)
+        self.assertIn("TAEE11", csv_str)
+        html_str = exporter.generate_printable_html_report(
+            title="Teste Relatório",
+            broker_name="Itaú / Íon Itaú",
+            macro_snapshot={"selic_rate": 13.75, "ipca_12m": 4.5, "real_rate": 9.25, "usd_brl": 5.4},
+            macro_regime={"regime_name": "Juros Reais Elevados"},
+            rows=sample_rows,
+            is_simulation=False
+        )
+        self.assertIn("RESOLUÇÃO CVM Nº 20", html_str)
+        self.assertIn("TAEE11", html_str)
 
 if __name__ == "__main__":
     unittest.main()

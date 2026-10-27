@@ -1,7 +1,7 @@
 """
-Dashboard Interativo do Robô de Recomendação Macroeconômica (B3).
-Suporta dois modos: Painel Básico (Simplificado/Executivo) e Painel Avançado (Arcabouço Completo).
-100% Isento de viés comercial, fundamentado em dados oficiais do BACEN e CVM.
+AlphaMacro B3 | Plataforma SaaS de Inteligência Quantamental, Educação Financeira e Gestão de Carteiras.
+Arquitetura Multi-Perfil, Multi-Corretora e Monetização Híbrida (Freemium + Assinatura Pro + Afiliados Éticos).
+100% Isenta de viés comercial na seleção de ativos, fundamentada em dados oficiais do BACEN, CVM e B3.
 """
 import os
 import streamlit as st
@@ -19,100 +19,211 @@ from engines.opportunity_engine import OpportunityEngine
 from engines.backtest_engine import BacktestEngine
 from engines.event_radar_engine import EventRadarEngine
 from engines.portfolio_simulator_engine import PortfolioSimulatorEngine
+from engines.onboarding_engine import OnboardingEngine
+from monetization.saas_engine import SaaSMonetizationEngine
+from storage.database import SaaSDatabase
+from utils.exporter import ReportExporter
 
 # Configuração da Página Streamlit
 st.set_page_config(
-    page_title="Robô de Recomendação Macro B3 | Itaú Advisory",
+    page_title="AlphaMacro B3 | Inteligência Quantamental & Carteiras",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Estilização CSS Moderna
+# Instâncias Globais de Produto
+db = SaaSDatabase()
+saas_engine = SaaSMonetizationEngine()
+onboarding_engine = OnboardingEngine()
+exporter = ReportExporter()
+
+# Design System CSS Profissional (FinTech SaaS UI)
 st.markdown("""
 <style>
-    .main-header {
-        font-size: 2.2rem;
-        font-weight: 700;
-        color: #EC7000; /* Cor Laranja Itaú */
+    .hero-banner {
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 65%, #334155 100%);
+        color: #ffffff;
+        padding: 22px 28px;
+        border-radius: 14px;
+        border-left: 6px solid #EC7000;
+        margin-bottom: 14px;
+        box-shadow: 0 4px 15px rgba(15, 23, 42, 0.12);
+    }
+    .hero-title {
+        font-size: 1.95rem;
+        font-weight: 800;
+        letter-spacing: -0.5px;
+        margin-bottom: 4px;
+        color: #ffffff;
+    }
+    .hero-title span {
+        color: #EC7000;
+    }
+    .hero-subtitle {
+        font-size: 0.98rem;
+        color: #cbd5e1;
         margin-bottom: 0px;
     }
-    .sub-header {
-        font-size: 1.1rem;
-        color: #6c757d;
-        margin-bottom: 20px;
-    }
-    .metric-card {
-        background-color: #f8f9fa;
+    .ticker-tape {
+        background-color: #f8fafc;
+        border: 1px solid #e2e8f0;
         border-radius: 10px;
-        padding: 15px;
-        border-left: 5px solid #EC7000;
-        margin-bottom: 10px;
+        padding: 10px 16px;
+        margin-bottom: 18px;
+        font-size: 0.88rem;
+        color: #334155;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 18px;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .paywall-box {
+        background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
+        border: 2px dashed #ea580c;
+        border-radius: 12px;
+        padding: 22px;
+        text-align: center;
+        margin: 16px 0;
+    }
+    .ad-slot-card {
+        background-color: #f8fafc;
+        border: 1px solid #cbd5e1;
+        border-top: 3px solid #0284c7;
+        border-radius: 10px;
+        padding: 14px;
+        height: 100%;
+    }
+    .cvm-footer {
+        margin-top: 40px;
+        padding: 18px 22px;
+        background-color: #f1f5f9;
+        border-top: 2px solid #cbd5e1;
+        border-radius: 8px;
+        font-size: 0.78rem;
+        color: #475569;
+        text-align: justify;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# Barra Lateral - Parâmetros do Usuário
-st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/thumb/1/1b/Banco_Ita%C3%BA_logo.svg/200px-Banco_Ita%C3%BA_logo.svg.png", width=120)
-st.sidebar.title("Configurações da Carteira")
+# ==============================================================================
+# BARRA LATERAL — CONTROLE DE PERFIL, CORRETORA, NAVEGAÇÃO E ACESSO SAAS
+# ==============================================================================
+st.sidebar.markdown("## 📈 Alpha**Macro** B3")
+st.sidebar.caption("Inteligência Quantamental Independente")
 
-view_mode = st.sidebar.radio(
-    "🖥️ Modo de Visualização",
+access_mode_label = st.sidebar.selectbox(
+    "🔐 Nível de Acesso (Simulador SaaS)",
     options=[
-        "📋 Painel Básico (Simplificado)",
-        "🔬 Painel Avançado (Completo)",
-        "🧭 Painel Simulação (Minha Carteira)"
+        "👑 Modo Fundador / Admin (Seu Uso)",
+        "💎 Visão Assinante PRO (Desbloqueado)",
+        "🔓 Visão Visitante Gratuito (Paywall)"
     ],
     index=0,
-    help="Alterne entre o Painel Básico (executivo), Painel Avançado (arcabouço completo) e Painel Simulação (auditoria e recomendações de atuação sobre uma carteira que você já montou)."
+    help="No 'Modo Fundador', você tem 100% de acesso irrestrito e vê o painel de receita SaaS. Alterne para 'Visitante Gratuito' para testar como clientes gratuitos veem o paywall e os afiliados."
 )
+
+if "Fundador" in access_mode_label:
+    active_tier = "founder"
+elif "PRO" in access_mode_label:
+    active_tier = "pro"
+else:
+    active_tier = "free"
+
+# Permitir desbloqueio por chave promocional se estiver na visão gratuita
+if active_tier == "free":
+    promo_code = st.sidebar.text_input(
+        "🔑 Possui Chave PRO? Digite aqui:",
+        placeholder="Ex: PRO-VIP-2026",
+        help="Clientes que pagam via PIX/Stripe recebem uma chave de ativação imediata."
+    )
+    if saas_engine.validate_access_code(promo_code):
+        active_tier = "pro"
+        st.sidebar.success("✅ Chave PRO validada! Acesso completo liberado.")
+
+perms = saas_engine.get_tier_permissions(active_tier)
 
 st.sidebar.markdown("---")
 
+view_mode = st.sidebar.radio(
+    "🧭 Ambiente de Navegação",
+    options=[
+        "📋 Painel Básico (Carteira Executiva)",
+        "🧭 Painel Simulação (Minha Carteira)",
+        "🔬 Painel Avançado (Quantamental Pro)",
+        "🌱 Começar do Zero (Educação & Reserva)",
+        "💰 Planos, Monetização & Admin SaaS"
+    ],
+    index=0,
+    help="Navegue entre a recomendação rápida, auditoria da sua carteira atual, análise avançada, guia para iniciantes e o painel de monetização."
+)
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("⚙️ Seus Parâmetros")
+
+selected_broker = st.sidebar.selectbox(
+    "🏦 Sua Corretora / Banco",
+    options=list(onboarding_engine.BROKER_GUIDES.keys()),
+    index=0,
+    help="Adapta automaticamente todas as instruções de compra, lote fracionário e passo a passo para o seu aplicativo."
+)
+
+# Atualizar valores caso o usuário tenha clicado em aplicar a calculadora do "Começar do Zero"
+default_patrimony = st.session_state.get("calc_patrimony", 100_000.0)
+default_equity = st.session_state.get("calc_equity", 20_000.0)
+
 total_patrimony = st.sidebar.number_input(
     "Patrimônio Total (R$)",
-    min_value=10_000.0,
-    max_value=10_000_000.0,
-    value=100_000.0,
+    min_value=1_000.0,
+    max_value=50_000_000.0,
+    value=float(default_patrimony),
     step=5_000.0,
-    help="Seu patrimônio total disponível (ex: R$ 100.000 no cofrinho/reserva)."
+    help="Seu patrimônio financeiro total (soma da Reserva no CDI + Renda Variável)."
 )
 
 equity_capital = st.sidebar.number_input(
-    "Alocação em Ações B3 (R$)",
-    min_value=1_000.0,
-    max_value=total_patrimony,
-    value=20_000.0,
+    "Capital para Ações B3 (R$)",
+    min_value=200.0,
+    max_value=float(total_patrimony),
+    value=min(float(default_equity), float(total_patrimony)),
     step=1_000.0,
-    help="Capital que você deseja alocar em renda variável (ex: R$ 20.000)."
+    help="Valor destinado à carteira de ações na B3."
 )
 
 user_profile = st.sidebar.selectbox(
-    "Perfil de Investimento",
-    options=["Segura / Dividendos & Qualidade", "Moderada (Dividendos + Crescimento)", "Crescimento / Agressiva"],
+    "Perfil de Estratégia",
+    options=[
+        "Segura / Dividendos & Qualidade",
+        "Moderada (Dividendos + Crescimento)",
+        "Crescimento / Agressiva"
+    ],
     index=0,
-    help="Para máxima segurança e menor risco, selecione 'Segura / Dividendos & Qualidade'."
+    help="Para máxima previsibilidade e dividendos isentos de IR, utilize 'Segura / Dividendos & Qualidade'."
 )
 
 num_assets = st.sidebar.slider(
-    "Número de Ações na Carteira",
+    "Nº de Ações na Carteira",
     min_value=4,
     max_value=6,
     value=5,
-    help="Entre 4 e 6 ativos garante diversificação setorial sem pulverização."
+    help="Entre 4 e 6 ativos garante diversificação setorial ótima sem pulverizar."
 )
 
 api_key_input = st.sidebar.text_input(
     "Gemini API Key (Opcional)",
     type="password",
     value=os.getenv("GEMINI_API_KEY", ""),
-    help="Caso queira turbinar os relatórios com a API do Gemini. Se em branco, o motor quantamental nativo opera normalmente."
+    help="Opcional. O motor quantamental nativo opera com 100% de capacidade mesmo sem chave externa."
 )
 
-st.sidebar.markdown("---")
-refresh_btn = st.sidebar.button("🔄 Atualizar Cotações e Análise", type="primary", use_container_width=True)
+refresh_btn = st.sidebar.button("🔄 Atualizar Dados em Tempo Real", type="primary", use_container_width=True)
 
-# Cache de análise para navegação rápida
+
+# ==============================================================================
+# FUNÇÕES CACHEADAS DE ALTA PERFORMANCE
+# ==============================================================================
 @st.cache_data(ttl=900, show_spinner=False)
 def get_advisor_data(profile_name: str, top_stocks_count: int, capital: float, api_key: str):
     advisor = MacroStockAdvisor(api_key=api_key or None)
@@ -141,67 +252,139 @@ def get_simulated_portfolio_data(holdings: list, profile_name: str, rec_allocati
         recommended_allocations=rec_allocations
     )
 
-# Execução da Análise
+
 if refresh_btn:
     st.cache_data.clear()
 
-with st.spinner("Analisando cenário macroeconômico, cotações da B3 e múltiplos em tempo real..."):
+with st.spinner("Sincronizando dados oficiais do BACEN, CVM e cotações em tempo real da B3..."):
     analysis = get_advisor_data(user_profile, num_assets, equity_capital, api_key_input)
 
 macro = analysis["macro_snapshot"]
 regime = analysis["macro_regime"]
 plan = analysis["portfolio_plan"]
 reports = analysis["reports"]
+broker_info = onboarding_engine.get_broker_guide(selected_broker)
 
 
 # ==============================================================================
-# MODO 1: PAINEL BÁSICO (SIMPLIFICADO / EXECUTIVO)
+# COMPONENTES VISUAIS REUTILIZÁVEIS (HEADER, TICKER TAPE, PAYWALL E ADS ÉTICOS)
 # ==============================================================================
-if "Básico" in view_mode:
-    st.markdown('<div class="main-header">Robô Macro B3 — Painel Simplificado</div>', unsafe_allow_html=True)
-    st.markdown(
-        f'<div class="sub-header">Alocação Direta: <b>R$ {equity_capital:,.2f}</b> em Ações Defensivas | '
-        f'Reserva Preservada: <b>R$ {(total_patrimony - equity_capital):,.2f}</b> (80% no Cofrinho/CDI)</div>',
-        unsafe_allow_html=True
+def render_top_header(subtitle_text: str):
+    tier_badge = SaaSMonetizationEngine.PLANS_CATALOG[active_tier]["badge"]
+    st.markdown(f"""
+    <div class="hero-banner">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap;">
+            <div>
+                <div class="hero-title">Alpha<span>Macro</span> B3 — Inteligência Quantamental</div>
+                <div class="hero-subtitle">{subtitle_text}</div>
+            </div>
+            <div style="text-align:right; font-size:0.9rem; background:rgba(255,255,255,0.12); padding:8px 14px; border-radius:8px;">
+                <b>{tier_badge}</b><br>
+                Corretora Ativa: <b>{selected_broker}</b>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown(f"""
+    <div class="ticker-tape">
+        <span>🏦 <b>Selic Meta (BACEN):</b> {macro['selic_rate']}% a.a.</span>
+        <span>📊 <b>IPCA 12m (IBGE):</b> {macro['ipca_12m']}%</span>
+        <span>🛡️ <b>Juro Real Brasil:</b> {macro['real_rate']}% a.a.</span>
+        <span>💵 <b>Dólar Comercial:</b> R$ {macro['usd_brl']:.2f} ({macro['usd_change_pct']:+.2f}%)</span>
+        <span>🛢️ <b>Petróleo Brent:</b> US$ {macro['brent_usd']:.2f}</span>
+        <span>🧭 <b>Ciclo Macro:</b> <b>{regime['regime_name']}</b></span>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+def render_paywall_card(feature_title: str, description: str):
+    st.markdown(f"""
+    <div class="paywall-box">
+        <h3 style="color:#c2410c; margin-top:0;">🔒 Recurso Exclusivo Assinante PRO: {feature_title}</h3>
+        <p style="color:#431407; font-size:1.0rem; max-width:760px; margin:8px auto 14px auto;">
+            {description}
+        </p>
+        <p style="font-weight:700; color:#ea580c; margin-bottom:4px;">
+            💎 Assine o Plano AlphaMacro PRO por apenas R$ 29,90/mês (ou R$ 249/ano no PIX)
+        </p>
+        <small style="color:#7c2d12;">
+            Para testar imediatamente, digite a chave <b>PRO-VIP-2026</b> na barra lateral esquerda ou alterne para o <b>Modo Fundador</b>.
+        </small>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+def render_ethical_ads_section():
+    if not perms["show_ethical_ads"]:
+        return
+    st.markdown("---")
+    st.caption("📢 **Vitrine Educacional & Parceiros Verificados** *(100% independente do algoritmo de ações — exibido apenas no Plano Gratuito)*")
+    slots = saas_engine.get_ethical_affiliate_slots()
+    cols = st.columns(len(slots))
+    for idx, slot in enumerate(slots):
+        with cols[idx]:
+            st.markdown(f"""
+            <div class="ad-slot-card">
+                <div style="font-size:0.75rem; color:#0284c7; font-weight:700; text-transform:uppercase;">{slot['category']}</div>
+                <div style="font-size:1.0rem; font-weight:700; color:#0f172a; margin:4px 0;">{slot['title']}</div>
+                <div style="font-size:0.85rem; color:#475569; margin-bottom:10px;">{slot['description']}</div>
+                <a href="{slot['url']}" target="_blank" style="font-size:0.85rem; font-weight:700; color:#EC7000; text-decoration:none;">{slot['cta_label']}</a>
+            </div>
+            """, unsafe_allow_html=True)
+
+
+def render_cvm_footer():
+    st.markdown("""
+    <div class="cvm-footer">
+        <b>⚖️ TRANSPARÊNCIA E CONFORMIDADE REGULATÓRIA (RESOLUÇÃO CVM Nº 20 / APIMEC):</b>
+        A plataforma <b>AlphaMacro B3</b> é uma ferramenta tecnológica de processamento quantitativo, educação financeira e simulação estatística
+        alimentada exclusivamente por dados públicos oficiais do Banco Central do Brasil (BACEN SGS), da Comissão de Valores Mobiliários (CVM) e da B3 S.A.
+        Nenhum indicador recebe patrocínio de empresas listadas ou corretoras. Os algoritmos matemáticos exibidos têm finalidade estritamente informativa e educacional,
+        não configurando consultoria individualizada ou promessa de rentabilidade. Rentabilidade passada não é garantia de retorno futuro.
+    </div>
+    """, unsafe_allow_html=True)
+
+
+# ==============================================================================
+# AMBIENTE 1: PAINEL BÁSICO (CARTEIRA EXECUTIVA SIMPLIFICADA)
+# ==============================================================================
+if "Painel Básico" in view_mode:
+    render_top_header(
+        f"Painel Executivo Simplificado | Alocação em Ações: R$ {equity_capital:,.2f} | "
+        f"Reserva Protegida no CDI: R$ {(total_patrimony - equity_capital):,.2f}"
     )
-
-    # Banner de Isenção de Viés
-    st.info("""
-    🛡️ **Garantia de Isenção e Independência (Dados 100% Não-Inviesados):**
-    Todas as recomendações deste sistema decorrem exclusivamente de modelos matemáticos quantamentais alimentados por fontes públicas oficiais:
-    - **Taxa Selic e Inflação:** Banco Central do Brasil (BACEN SGS - Séries 432 e 13522).
-    - **Cotações e Volumes:** Negociação real da B3 (sem spread de intermediários).
-    - **Demonstrações Financeiras:** Balanços auditados oficiais arquivados na CVM.
-    *Zero conflito de agência: sem taxas de corretagem embutidas, sem incentivo a giro excessivo e sem relatórios patrocinados por empresas.*
-    """)
 
     # 4 Cards Principais
     b1, b2, b3, b4 = st.columns(4)
     with b1:
-        st.metric("Capital a Investir", f"R$ {plan['total_allocated']:,.2f}", f"Caixa: R$ {plan['cash_remaining']:,.2f}")
+        st.metric("Capital Alocado na B3", f"R$ {plan['total_allocated']:,.2f}", f"Sobra em Caixa: R$ {plan['cash_remaining']:,.2f}")
     with b2:
-        st.metric("Dividend Yield Médio", f"{plan['portfolio_dividend_yield']}% a.a.", "Isento de IR")
+        st.metric("Dividend Yield Médio", f"{plan['portfolio_dividend_yield']}% a.a.", "Isento de IR (PF)")
     with b3:
-        st.metric("Preço-Alvo Médio (Ganho)", f"+{plan['portfolio_expected_upside']}%", "Meta de Lucro")
+        st.metric("Potencial Médio (Upside)", f"+{plan['portfolio_expected_upside']}%", "Até os Preços-Alvo")
     with b4:
-        st.metric("Total de Ações", f"{plan['num_positions']} Empresas", "Diversificação Ótima")
+        st.metric("Corretora Configurada", selected_broker, broker_info["brokerage_fee"][:28])
 
-    st.markdown("---")
-
-    # Radar Executivo de Eventos Cíclicos e Geopolíticos no Painel Básico
+    # Alerta Executivo de Eventos Cíclicos e Geopolíticos
     basic_radar = get_event_radar_data(plan["allocations"])
     basic_stress = basic_radar["live_stress"]
-    with st.expander(f"📡 Avisos de Eventos Cíclicos (Eleições/Balanços) & Geopolítica — Status: {basic_stress['regime_alert']}", expanded=True):
+    with st.expander(f"📡 Radar de Eventos Cíclicos (Eleições/Balanços) & Geopolítica — Status: {basic_stress['regime_alert']}", expanded=True):
         st.markdown(f"""
-        - **🗳️ Eventos Cíclicos Previsíveis:** `{basic_radar['cyclical_events'][0]['current_status']}` | `{basic_radar['cyclical_events'][2]['current_status']}`
-        - **🌍 Termômetro Geopolítico & Mercado em Tempo Real:** Score de Tensão **{basic_stress['stress_score']}/100** | Índice VIX: **{basic_stress['vix_level']} pts** | Petróleo Brent: **US$ {basic_stress['brent_usd']:.2f}** | Ouro Refúgio: **US$ {basic_stress['gold_usd']:.2f}**
-        - **🛡️ Diretriz Prática para sua Carteira (R$ 20.000):** Sua carteira prioriza Transmissoras de Energia (`TAEE11`, `ISAE4`) e Seguradoras (`CXSE3`, `BBSE3`) que historicamente amortecem mais de 65% dos choques eleitorais e geopolíticos. Evite enviar ordens a mercado em véspera de Copom ou apuração eleitoral; utilize sempre **Ordem Limitada** na Faixa de Entrada Ideal. *(Para explorar o simulador completo de choques eleitorais e geopolíticos, alterne para o **Painel Avançado -> aba 📡 Eventos, Eleições & Geopolítica**).*
+        - **🗳️ Calendário Cíclico:** `{basic_radar['cyclical_events'][0]['current_status']}` | `{basic_radar['cyclical_events'][2]['current_status']}`
+        - **🌍 Termômetro de Tensão Global:** Score **{basic_stress['stress_score']}/100** | VIX: **{basic_stress['vix_level']} pts** | Petróleo Brent: **US$ {basic_stress['brent_usd']:.2f}** | Ouro: **US$ {basic_stress['gold_usd']:.1f}**
+        - **🛡️ Diretriz Prática ({selected_broker}):** Utilize sempre **Ordem Limitada** na Faixa de Entrada Ideal e mantenha sua Reserva de Emergência protegida em 100% CDI.
         """)
 
-    # 1. Tabela Executiva de Ações
-    st.markdown("### 📋 1. Ações Recomendadas para Comprar")
+    # 1. Tabela Executiva de Ações (com filtro Freemium se visitante gratuito)
+    st.markdown("### 📋 1. Ações Recomendadas para Comprar Hoje")
+    visible_limit = perms["max_visible_recommendations"]
+    all_allocs = plan["allocations"]
+    visible_allocs = all_allocs[:visible_limit]
+    locked_count = max(0, len(all_allocs) - len(visible_allocs))
+
     basic_table = []
-    for item in plan["allocations"]:
+    for item in visible_allocs:
         basic_table.append({
             "Ação": item["ticker"],
             "Empresa": item["name"],
@@ -217,75 +400,149 @@ if "Básico" in view_mode:
         })
     st.dataframe(pd.DataFrame(basic_table), use_container_width=True, hide_index=True)
 
+    if locked_count > 0:
+        render_paywall_card(
+            f"+{locked_count} Ações Defensivas de Alto Dividendo Ocultas no Plano Gratuito",
+            f"O algoritmo selecionou {len(all_allocs)} ações para blindar seus R$ {equity_capital:,.2f}. "
+            f"Desbloqueie as {locked_count} posições restantes com Preço-Alvo, Faixa de Entrada, Stop Loss e Exportação em PDF."
+        )
+    else:
+        # Botões de Exportação Profissional (PRO / Fundador)
+        exp_col1, exp_col2 = st.columns(2)
+        with exp_col1:
+            csv_bytes = exporter.export_allocations_to_csv(all_allocs).encode("utf-8-sig")
+            st.download_button(
+                "📥 Baixar Planilha da Carteira (CSV / Excel)",
+                data=csv_bytes,
+                file_name="carteira_recomendada_alphamacro.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+        with exp_col2:
+            html_rep = exporter.generate_printable_html_report(
+                title=f"Carteira Recomendada ({user_profile})",
+                broker_name=selected_broker,
+                macro_snapshot=macro,
+                macro_regime=regime,
+                rows=all_allocs,
+                is_simulation=False
+            )
+            st.download_button(
+                "🖨️ Baixar Relatório Executivo Imprimível (HTML / Salvar PDF)",
+                data=html_rep.encode("utf-8"),
+                file_name="relatorio_executivo_alphamacro.html",
+                mime="text/html",
+                use_container_width=True
+            )
+
     st.markdown("---")
 
-    # 2. Resumo de Ordens para o App do Itaú
-    col_ordens, col_passos = st.columns([1.1, 0.9])
+    # 2. Resumo de Ordens Adaptado à Corretora Selecionada
+    col_ordens, col_passos = st.columns([1.15, 0.85])
     with col_ordens:
-        st.markdown("### 📱 2. Como Emitir as Ordens no Itaú / Íon")
-        for item in plan["allocations"]:
+        st.markdown(f"### 📱 2. Boletas Prontas para Emitir ({selected_broker})")
+        for item in visible_allocs:
+            ticket_text = onboarding_engine.format_broker_order_ticket(item, selected_broker)
             st.success(f"""
-            **{item['ticker']}** ({item['name']}) — Comprar **{item['shares_count']} ações**
-            - 🛒 `{item['execution_instruction']}`
-            - 🎯 **Preço-Alvo (Venda para Lucro):** R$ {item['target_price']:.2f}
-            - 🛑 **Stop Loss (Venda para Proteção):** R$ {item['stop_loss_price']:.2f}
+            **{item['ticker']}** ({item['name']}) — Comprar **{item['shares_count']} ações** (R$ {item['invested_amount']:,.2f})
+            - 🛒 `{ticket_text}`
+            - 🎯 **Faixa de Entrada Limitada:** {item['entry_action']}
+            - 📈 **Preço-Alvo (Venda Gain):** R$ {item['target_price']:.2f} (+{item['potential_gain_pct']}%)
+            - 🛑 **Stop Loss (Venda Proteção):** R$ {item['stop_loss_price']:.2f} ({item['max_loss_pct']}%)
             """)
 
     with col_passos:
-        st.markdown("### 💡 3. Passo a Passo Rápido")
-        st.markdown("""
-        1. Abra o app **Itaú** ou **Íon Itaú** no celular.
-        2. Vá em **Investir > Renda Variável > Buscar Ativo**.
-        3. Digite o ticker (ex: `BBAS3` ou `BBAS3F`).
-        4. Insira a quantidade recomendada e selecione **Ordem Limitada** no preço da faixa de entrada.
-        5. Salve os alarmes do Preço-Alvo e Stop Loss para executar as saídas recomendadas.
+        st.markdown(f"### 🏦 3. Passo a Passo no App: {broker_info['broker_name']}")
+        st.info(f"""
+        - **Custo de Corretagem:** {broker_info['brokerage_fee']}
+        - **Caminho no App:** `{broker_info['app_menu_path']}`
+        - **Regra do Lote Fracionário:** {broker_info['fractional_rule']}
         """)
+        for idx, step in enumerate(broker_info["step_by_step"], 1):
+            st.markdown(f"**{idx}.** {step}")
+        st.caption(f"💡 **Dica de Especialista:** {broker_info['pro_tip']}")
 
     st.markdown("---")
 
     # 3. Relatórios Executivos Diretos
     st.markdown("### 📄 4. Relatório Executivo e Motivo da Recomendação")
     basic_selected_ticker = st.selectbox(
-        "Selecione uma ação para ler o relatório executivo:",
-        options=[s["meta"]["ticker"] for s in analysis["ranked_stocks"]],
+        "Selecione uma ação para ler a tese detalhada:",
+        options=[s["ticker"] for s in visible_allocs],
         key="basic_report_select"
     )
     basic_rep = reports.get(basic_selected_ticker, {})
     st.markdown(basic_rep.get("content", "Relatório não disponível."))
 
+    render_ethical_ads_section()
+
 
 # ==============================================================================
-# MODO 2: PAINEL SIMULAÇÃO (AUDITORIA E GESTÃO DE CARTEIRA JÁ MONTADA)
+# AMBIENTE 2: PAINEL SIMULAÇÃO (MINHA CARTEIRA MONTADA + SALVAMENTO SQLITE)
 # ==============================================================================
 elif "Simulação" in view_mode:
-    st.markdown('<div class="main-header">Robô Macro B3 — Painel Simulação (Minha Carteira)</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="sub-header">Auditoria em Tempo Real da Sua Carteira Anterior: '
-        'Cálculo de Lucro/Prejuízo, Yield on Cost, Risco, Monte Carlo, Backtest e Recomendações Táticas de Como Atuar Hoje</div>',
-        unsafe_allow_html=True
+    render_top_header(
+        "Painel Simulação & Gestão Ativa | Audite sua carteira já comprada e descubra exatamente como atuar hoje"
     )
 
     st.info("""
-    🧭 **Como funciona o Painel Simulação:**
-    Insira abaixo as ações que você **já comprou no Itaú** (meses atrás ou na recomendação anterior), informando a **Quantidade de Ações** e o **Preço Médio de Compra (R$)**.
-    O sistema **não cria uma carteira do zero**: ele audita a **sua carteira montada** sob as cotações e o cenário macroeconômico de hoje e responde para cada ativo:
-    **Manter (Hold), Comprar Mais (Aporte), Realizar Lucro (Venda Parcial/Total), Rebalancear Peso ou Acionar Defesa (Stop/Substituição).**
+    🧭 **Para que serve o Painel Simulação:**
+    Você seguiu uma recomendação no mês passado ou já possui uma carteira montada na sua corretora?
+    Insira abaixo os ativos que você tem em mãos (**Ticker**, **Quantidade** e **Preço Médio de Compra**).
+    O sistema calcula seu **Lucro/Prejuízo**, seu ***Yield on Cost*** e indica para cada ação:
+    **Manter (Hold), Comprar Mais (Aporte), Realizar Lucro (Venda Parcial), Rebalancear Peso ou Acionar Defesa (Stop).**
     """)
 
-    # Inicializar carteira de exemplo na sessão caso não exista
     if "user_sim_portfolio" not in st.session_state:
-        st.session_state["user_sim_portfolio"] = [
-            {"Ticker (B3)": "TAEE11", "Quantidade": 100, "Preço Médio (R$)": 38.00},
-            {"Ticker (B3)": "CXSE3", "Quantidade": 220, "Preço Médio (R$)": 16.50},
-            {"Ticker (B3)": "BBSE3", "Quantidade": 115, "Preço Médio (R$)": 33.20},
-            {"Ticker (B3)": "ISAE4", "Quantidade": 150, "Preço Médio (R$)": 25.80},
-            {"Ticker (B3)": "BBAS3", "Quantidade": 170, "Preço Médio (R$)": 23.00},
-        ]
+        saved_default = db.load_portfolio("minha_carteira_itau")
+        if saved_default and saved_default.get("holdings"):
+            st.session_state["user_sim_portfolio"] = saved_default["holdings"]
+        else:
+            st.session_state["user_sim_portfolio"] = [
+                {"Ticker (B3)": "TAEE11", "Quantidade": 100, "Preço Médio (R$)": 38.00},
+                {"Ticker (B3)": "CXSE3", "Quantidade": 220, "Preço Médio (R$)": 16.50},
+                {"Ticker (B3)": "BBSE3", "Quantidade": 115, "Preço Médio (R$)": 33.20},
+                {"Ticker (B3)": "ISAE4", "Quantidade": 150, "Preço Médio (R$)": 25.80},
+                {"Ticker (B3)": "BBAS3", "Quantidade": 170, "Preço Médio (R$)": 23.00},
+            ]
 
-    col_editor, col_presets = st.columns([1.45, 0.55])
-    with col_presets:
-        st.markdown("#### ⚙️ Atalhos de Carteira")
-        if st.button("📥 Carregar Carteira Recomendada de Hoje", use_container_width=True):
+    col_editor, col_cloud = st.columns([1.35, 0.65])
+    with col_cloud:
+        st.markdown("#### 💾 Salvar / Carregar Carteira")
+        user_key_input = st.text_input(
+            "Seu Identificador ou E-mail:",
+            value="minha_carteira_itau",
+            help="Use seu e-mail ou apelido para salvar sua carteira no banco de dados e recuperá-la no próximo mês."
+        )
+        portfolio_name_input = st.text_input(
+            "Nome da Carteira:",
+            value=f"Carteira {selected_broker}",
+        )
+        c_btn1, c_btn2 = st.columns(2)
+        with c_btn1:
+            if st.button("💾 Salvar Carteira", use_container_width=True):
+                if perms["can_save_cloud_portfolio"]:
+                    db.save_portfolio(
+                        user_key=user_key_input,
+                        portfolio_name=portfolio_name_input,
+                        broker=selected_broker,
+                        holdings=st.session_state["user_sim_portfolio"]
+                    )
+                    db.log_event("save_portfolio", active_tier, user_key_input)
+                    st.success("Carteira salva com sucesso!")
+                else:
+                    st.warning("🔒 Salvamento em nuvem é exclusivo do Plano PRO.")
+        with c_btn2:
+            if st.button("📂 Carregar Salva", use_container_width=True):
+                loaded = db.load_portfolio(user_key_input)
+                if loaded:
+                    st.session_state["user_sim_portfolio"] = loaded["holdings"]
+                    st.rerun()
+                else:
+                    st.warning("Nenhuma carteira encontrada para este identificador.")
+
+        st.markdown("#### ⚡ Atalhos Rápidos")
+        if st.button("📥 Carregar Recomendação de Hoje", use_container_width=True):
             st.session_state["user_sim_portfolio"] = [
                 {
                     "Ticker (B3)": a["ticker"],
@@ -296,7 +553,7 @@ elif "Simulação" in view_mode:
             ]
             st.rerun()
 
-        if st.button("🕰️ Carregar Exemplo de Carteira Anterior (c/ Lucros e Quedas)", use_container_width=True):
+        if st.button("🕰️ Exemplo: Carteira do Mês Anterior", use_container_width=True):
             st.session_state["user_sim_portfolio"] = [
                 {"Ticker (B3)": "TAEE11", "Quantidade": 100, "Preço Médio (R$)": 38.00},
                 {"Ticker (B3)": "CXSE3", "Quantidade": 220, "Preço Médio (R$)": 16.50},
@@ -306,12 +563,8 @@ elif "Simulação" in view_mode:
             ]
             st.rerun()
 
-        st.caption(
-            "💡 Você pode editar qualquer célula na tabela ao lado, adicionar novas linhas (`+`) ou excluir linhas existentes."
-        )
-
     with col_editor:
-        st.markdown("#### 📝 Edite os Ativos da Sua Carteira Montada no Itaú")
+        st.markdown(f"#### 📝 Edite os Ativos da Sua Carteira ({selected_broker})")
         edited_df = st.data_editor(
             pd.DataFrame(st.session_state["user_sim_portfolio"]),
             num_rows="dynamic",
@@ -341,8 +594,8 @@ elif "Simulação" in view_mode:
             },
             key="portfolio_sim_editor"
         )
+        st.session_state["user_sim_portfolio"] = edited_df.to_dict("records")
 
-    # Converter o DataFrame editado para a lista de holdings
     parsed_holdings = []
     for _, row in edited_df.iterrows():
         t_val = str(row.get("Ticker (B3)", "")).strip().upper()
@@ -354,6 +607,15 @@ elif "Simulação" in view_mode:
                 "shares": int(q_val),
                 "avg_price": float(p_val),
             })
+
+    # Regra Freemium para número de ações no simulador
+    if not perms["is_premium"] and len(parsed_holdings) > perms["max_simulator_stocks"]:
+        render_paywall_card(
+            f"Simulação Acima de {perms['max_simulator_stocks']} Ações na Carteira",
+            f"No Plano Gratuito, o simulador audita as primeiras {perms['max_simulator_stocks']} posições da sua carteira. "
+            f"Faça upgrade para o Plano PRO para simular carteiras ilimitadas, salvar na nuvem e rodar Monte Carlo completo."
+        )
+        parsed_holdings = parsed_holdings[:perms["max_simulator_stocks"]]
 
     if not parsed_holdings:
         st.warning("Adicione pelo menos 1 ação válida na tabela acima para calcular as métricas da sua carteira.")
@@ -371,44 +633,51 @@ elif "Simulação" in view_mode:
 
             k1, k2, k3, k4, k5, k6 = st.columns(6)
             with k1:
-                st.metric(
-                    "Custo Total Investido",
-                    f"R$ {s_sum['total_invested_cost']:,.2f}",
-                    f"{s_sum['num_positions']} posições ativas"
-                )
+                st.metric("Custo Total Investido", f"R$ {s_sum['total_invested_cost']:,.2f}", f"{s_sum['num_positions']} posições")
             with k2:
-                st.metric(
-                    "Valor de Mercado Hoje",
-                    f"R$ {s_sum['total_current_value']:,.2f}",
-                    f"{s_sum['total_pnl_pct']:+.2f}% acumulado"
-                )
+                st.metric("Valor de Mercado Hoje", f"R$ {s_sum['total_current_value']:,.2f}", f"{s_sum['total_pnl_pct']:+.2f}% acumulado")
             with k3:
-                st.metric(
-                    "Lucro / Prejuízo Aberto",
-                    f"R$ {s_sum['total_pnl_brl']:+,.2f}",
-                    "Resultado de Capital"
-                )
+                st.metric("Lucro / Prejuízo Aberto", f"R$ {s_sum['total_pnl_brl']:+,.2f}", "Resultado de Capital")
             with k4:
                 st.metric(
-                    "Dividendos 12m & Yield on Cost",
+                    "Dividendos 12m & YoC",
                     f"R$ {s_sum['total_annual_dividends_brl']:,.2f}/ano",
-                    f"YoC: {s_sum['weighted_yoc_pct']}% | DY Atual: {s_sum['weighted_dy_current']}%"
+                    f"YoC: {s_sum['weighted_yoc_pct']}% | DY: {s_sum['weighted_dy_current']}%"
                 )
             with k5:
-                st.metric(
-                    "Score Macro da Carteira",
-                    f"{s_sum['weighted_score']}/100",
-                    f"Confiança: {s_sum['weighted_confidence']}%"
-                )
+                st.metric("Score Macro da Carteira", f"{s_sum['weighted_score']}/100", f"Confiança: {s_sum['weighted_confidence']}%")
             with k6:
                 hhi_label = "Diversificada" if s_sum["hhi_index"] <= 2500 else "Concentrada"
-                st.metric(
-                    "Concentração (HHI) & Upside",
-                    f"{s_sum['hhi_index']} pts ({hhi_label})",
-                    f"Upside aos Alvos: +{s_sum['weighted_upside_pct']}%"
-                )
+                st.metric("Concentração (HHI)", f"{s_sum['hhi_index']} pts ({hhi_label})", f"Upside: +{s_sum['weighted_upside_pct']}%")
 
-            # Abas Internas do Painel de Simulação
+            if perms["can_export_reports"]:
+                sim_exp1, sim_exp2 = st.columns(2)
+                with sim_exp1:
+                    sim_csv = exporter.export_allocations_to_csv(s_positions).encode("utf-8-sig")
+                    st.download_button(
+                        "📥 Exportar Auditoria da Minha Carteira (CSV / Excel)",
+                        data=sim_csv,
+                        file_name="auditoria_minha_carteira.csv",
+                        mime="text/csv",
+                        use_container_width=True
+                    )
+                with sim_exp2:
+                    sim_html = exporter.generate_printable_html_report(
+                        title=f"Auditoria de Carteira Montada ({portfolio_name_input})",
+                        broker_name=selected_broker,
+                        macro_snapshot=macro,
+                        macro_regime=regime,
+                        rows=s_positions,
+                        is_simulation=True
+                    )
+                    st.download_button(
+                        "🖨️ Baixar Relatório de Diagnóstico da Minha Carteira (HTML / PDF)",
+                        data=sim_html.encode("utf-8"),
+                        file_name="diagnostico_minha_carteira.html",
+                        mime="text/html",
+                        use_container_width=True
+                    )
+
             sim_tab_actions, sim_tab_compare, sim_tab_mc, sim_tab_bt, sim_tab_events = st.tabs([
                 "🧭 1. Como Atuar Agora (Por Ação)",
                 "🔄 2. Sua Carteira vs. Ideal de Hoje",
@@ -417,12 +686,8 @@ elif "Simulação" in view_mode:
                 "📡 5. Risco Eleitoral & Geopolítico da Sua Carteira"
             ])
 
-            # ------------------------------------------------------------------
-            # SUB-ABA 1: COMO ATUAR AGORA POR AÇÃO
-            # ------------------------------------------------------------------
             with sim_tab_actions:
-                st.subheader("🧭 Diagnóstico Individual e Recomendação de Atuação no Itaú")
-
+                st.subheader(f"🧭 Diagnóstico Individual e Recomendação de Atuação ({selected_broker})")
                 ac = s_sum["action_counts"]
                 a1, a2, a3, a4, a5 = st.columns(5)
                 with a1:
@@ -457,13 +722,13 @@ elif "Simulação" in view_mode:
                 st.dataframe(pd.DataFrame(sim_table_rows), use_container_width=True, hide_index=True)
 
                 st.markdown("---")
-                st.markdown("### 📋 Parecer Técnico e Instrução de Boleta por Posição")
+                st.markdown(f"### 📋 Parecer Técnico e Instrução de Boleta ({selected_broker})")
                 for p in s_positions:
                     box_text = f"""
                     **{p['ticker']} ({p['name']}) — {p['action_badge']}** *(Prioridade: {p['action_priority']})*
                     - **Sua Posição:** `{p['shares_count']} ações` compradas a **R$ {p['avg_price']:.2f}** (Custo: R$ {p['invested_cost']:,.2f}) $\\rightarrow$ **Cotação Hoje: R$ {p['current_price']:.2f}** (Valor: **R$ {p['current_value']:,.2f}** | Resultado: **{p['pnl_pct']:+.2f}% / R$ {p['pnl_brl']:+,.2f}**)
                     - **Proventos da Sua Posição:** Receita anual estimada de **R$ {p['annual_dividends_brl']:,.2f}** (*Yield on Cost* de **{p['yield_on_cost_pct']:.2f}% a.a.** sobre seu preço pago | DY atual de {p['dividend_yield']}%).
-                    - **📱 O Que Fazer no App do Itaú:** `{p['summary_command']}`
+                    - **📱 O Que Fazer no App ({selected_broker}):** `{p['summary_command']}`
                     - **🧠 Parecer do Sistema:** {p['rationale']}
                     """
                     if p["alert_type"] == "error":
@@ -475,17 +740,8 @@ elif "Simulação" in view_mode:
                     else:
                         st.success(box_text)
 
-            # ------------------------------------------------------------------
-            # SUB-ABA 2: COMPARATIVO SUA CARTEIRA VS CARTEIRA IDEAL DE HOJE
-            # ------------------------------------------------------------------
             with sim_tab_compare:
                 st.subheader("🔄 Comparativo: Sua Carteira Anterior vs. Carteira Recomendada Hoje")
-                st.markdown("""
-                É muito comum que, de um mês para o outro, as cotações oscilem e o ranking das Top 5 mude levemente.
-                **Atenção:** No investimento fundamentalista de longo prazo, **você NÃO deve girar a carteira inteira todo mês**! 
-                Trocas só devem ocorrer quando uma ação atinge o Preço-Alvo (realização de lucro) ou perde fundamentos (Score < 62).
-                """)
-
                 col_cmp1, col_cmp2 = st.columns(2)
                 with col_cmp1:
                     st.markdown("#### 💼 Métricas da Sua Carteira Montada")
@@ -553,13 +809,9 @@ elif "Simulação" in view_mode:
                     else:
                         st.info("Você já possui todas as ações do Top 5 atual na sua carteira!")
 
-            # ------------------------------------------------------------------
-            # SUB-ABA 3: MONTE CARLO & PROJEÇÕES DA SUA CARTEIRA MONTADA
-            # ------------------------------------------------------------------
             with sim_tab_mc:
                 st.subheader("🎲 Simulação de Monte Carlo & Efeito Bola de Neve da Sua Carteira")
                 selic_sim = macro.get("selic_rate", 13.75)
-
                 mc_sim_engine = MonteCarloEngine(n_simulations=1000, n_days=252)
                 with st.spinner("Executando 1.000 simulações estocásticas de Monte Carlo para a sua carteira..."):
                     user_mc = mc_sim_engine.run_simulation(
@@ -567,7 +819,6 @@ elif "Simulação" in view_mode:
                         initial_capital=s_sum["total_current_value"],
                         cdi_annual=selic_sim
                     )
-
                 if user_mc:
                     um1, um2, um3, um4, um5 = st.columns(5)
                     with um1:
@@ -608,27 +859,6 @@ elif "Simulação" in view_mode:
                     )
                     st.plotly_chart(fig_ufan, use_container_width=True)
 
-                st.markdown("---")
-                st.markdown("#### 🔄 Projeção de Reinvestimento de Dividendos (5 Anos) da Sua Carteira")
-                proj_sim_engine = ProjectionEngine()
-                df_u_growth = proj_sim_engine.simulate_long_term_growth(
-                    initial_capital=s_sum["total_current_value"],
-                    monthly_contribution=0.0,
-                    dividend_yield_annual=s_sum["weighted_dy_current"],
-                    growth_annual=6.0,
-                    cdi_annual=selic_sim,
-                    years=5,
-                    reinvest_dividends=True
-                )
-                fig_u_proj = go.Figure()
-                fig_u_proj.add_trace(go.Scatter(x=df_u_growth["Ano"], y=df_u_growth["Carteira Ações"], mode="lines+markers", name="Sua Carteira (c/ Reinvestimento)", line=dict(color="#28a745", width=3)))
-                fig_u_proj.add_trace(go.Scatter(x=df_u_growth["Ano"], y=df_u_growth["Cofrinho CDI"], mode="lines+markers", name="CDI Líquido", line=dict(color="#EC7000", width=2, dash="dash")))
-                fig_u_proj.update_layout(height=340, template="plotly_white", title="Projeção Composta de 5 Anos do Saldo Atual")
-                st.plotly_chart(fig_u_proj, use_container_width=True)
-
-            # ------------------------------------------------------------------
-            # SUB-ABA 4: BACKTESTING HISTÓRICO DA SUA CARTEIRA MONTADA
-            # ------------------------------------------------------------------
             with sim_tab_bt:
                 st.subheader("⏪ Backtesting Histórico da Sua Carteira Montada (1A, 2A, 3A e 5A)")
                 selic_ubt = macro.get("selic_rate", 13.75)
@@ -651,25 +881,6 @@ elif "Simulação" in view_mode:
 
                     st.dataframe(pd.DataFrame(user_bt["summary_table"]), use_container_width=True, hide_index=True)
 
-                    u_scen_keys = list(user_bt["scenarios"].keys())
-                    sel_u_scen = st.selectbox(
-                        "Selecione a janela histórica para visualizar a curva da sua carteira:",
-                        options=u_scen_keys,
-                        index=len(u_scen_keys) - 1,
-                        key="user_bt_scen_select"
-                    )
-                    u_scen_data = user_bt["scenarios"][sel_u_scen]
-                    u_curves = u_scen_data["curves_df"]
-                    fig_ueq = go.Figure()
-                    fig_ueq.add_trace(go.Scatter(x=u_curves["Data"], y=u_curves["Carteira Recomendada (R$)"], mode="lines", name="Sua Carteira (R$)", line=dict(color="#28a745", width=3)))
-                    fig_ueq.add_trace(go.Scatter(x=u_curves["Data"], y=u_curves["CDI Líquido (R$)"], mode="lines", name="CDI Líquido (R$)", line=dict(color="#EC7000", width=2, dash="dash")))
-                    fig_ueq.add_trace(go.Scatter(x=u_curves["Data"], y=u_curves["Ibovespa (R$)"], mode="lines", name="Ibovespa (R$)", line=dict(color="#6c757d", width=2)))
-                    fig_ueq.update_layout(height=380, template="plotly_white", title=f"Backtest Histórico da Sua Carteira — {sel_u_scen}")
-                    st.plotly_chart(fig_ueq, use_container_width=True)
-
-            # ------------------------------------------------------------------
-            # SUB-ABA 5: SENSIBILIDADE DA SUA CARTEIRA A ELEIÇÕES E GEOPOLÍTICA
-            # ------------------------------------------------------------------
             with sim_tab_events:
                 st.subheader("📡 Teste de Estresse Eleitoral & Geopolítico na Sua Carteira")
                 ev_sim_eng = EventRadarEngine()
@@ -698,17 +909,309 @@ elif "Simulação" in view_mode:
 
 
 # ==============================================================================
-# MODO 2: PAINEL AVANÇADO (ARCABOUÇO QUANTAMENTAL COMPLETO)
+# AMBIENTE 3: COMEÇAR DO ZERO (EDUCAÇÃO FINANCEIRA, RESERVA & MULTI-CORRETORA)
 # ==============================================================================
-else:
-    st.markdown('<div class="main-header">Robô Macro B3 | Painel Avançado & Quantamental</div>', unsafe_allow_html=True)
-    st.markdown(
-        f'<div class="sub-header">Arcabouço Técnico Completo: Monte Carlo, Autodiagnóstico, Auditoria de Dados e Oportunidades | '
-        f'Capital Renda Variável: <b>R$ {equity_capital:,.2f}</b> | Reserva: <b>R$ {(total_patrimony - equity_capital):,.2f}</b></div>',
-        unsafe_allow_html=True
+elif "Começar do Zero" in view_mode:
+    render_top_header(
+        "Jornada Começar a Investir do Zero | Planejamento de Reserva de Emergência, Perfil Suitability e Dicionário Sem Economês"
     )
 
-    # 10 Abas Avançadas
+    edu_tab1, edu_tab2, edu_tab3 = st.tabs([
+        "🧮 1. Calculadora de Reserva de Emergência & Quanto Investir na B3",
+        "🏦 2. Guia Multi-Corretora (Onde e Como Operar Taxa Zero)",
+        "📘 3. Dicionário Visual Sem 'Economês' (Conceitos Essenciais)"
+    ])
+
+    with edu_tab1:
+        st.subheader("🧮 Descubra Quanto Manter na Reserva (CDI) e Quanto Investir em Ações")
+        st.markdown("""
+        O erro número 1 de quem começa a investir é colocar todo o dinheiro na Bolsa e precisar vender com prejuízo numa emergência.
+        Preencha seus dados abaixo para o algoritmo calcular sua **Reserva de Emergência Ideal** e a **Fatia Segura para Ações na B3**:
+        """)
+
+        c_in1, c_in2, c_in3 = st.columns(3)
+        with c_in1:
+            u_income = st.number_input("Sua Renda Mensal Líquida (R$)", min_value=1_000.0, max_value=500_000.0, value=8_500.0, step=500.0)
+            u_expenses = st.number_input("Seu Custo de Vida Mensal (R$)", min_value=800.0, max_value=float(u_income), value=5_000.0, step=500.0)
+        with c_in2:
+            u_savings = st.number_input("Total que Você Já Tem Guardado (R$)", min_value=0.0, max_value=10_000_000.0, value=float(total_patrimony), step=5_000.0)
+            u_stability = st.selectbox(
+                "Estabilidade da Sua Renda",
+                options=[
+                    "Estável (Servidor Público / Aposentado / CLT Consolidado)",
+                    "Moderada (CLT Privado / Profissional Liberal)",
+                    "Variável (Autônomo / Empresário / Comissionado)"
+                ],
+                index=1
+            )
+        with c_in3:
+            u_exp_level = st.selectbox(
+                "Sua Experiência com Investimentos",
+                options=[
+                    "Nunca investi em ações (Começando do zero)",
+                    "Iniciante (Já tenho Cofrinho / CDB / Tesouro Selic)",
+                    "Intermediário / Avançado (Já opero na B3)"
+                ],
+                index=1
+            )
+
+        fin_plan = onboarding_engine.calculate_financial_plan(
+            monthly_income=u_income,
+            monthly_expenses=u_expenses,
+            total_patrimony=u_savings,
+            job_stability=u_stability,
+            experience_level=u_exp_level
+        )
+
+        st.markdown("---")
+        fp1, fp2, fp3, fp4 = st.columns(4)
+        with fp1:
+            st.metric(
+                "Reserva de Emergência Ideal",
+                f"R$ {fin_plan['ideal_emergency_reserve_brl']:,.2f}",
+                f"{fin_plan['months_reserve_required']} meses do custo de vida"
+            )
+        with fp2:
+            st.metric(
+                "Cobertura Atual da Reserva",
+                f"{fin_plan['reserve_coverage_pct']}%",
+                "Em 100% CDI / Tesouro Selic"
+            )
+        with fp3:
+            st.metric(
+                "Capital Seguro para Ações Hoje",
+                f"R$ {fin_plan['suggested_equity_capital_brl']:,.2f}",
+                f"Preservar R$ {fin_plan['safe_fixed_income_kept_brl']:,.2f} no CDI"
+            )
+        with fp4:
+            st.metric(
+                "Aporte Mensal Sugerido em Ações",
+                f"R$ {fin_plan['suggested_monthly_stocks_brl']:,.2f}/mês",
+                f"De R$ {fin_plan['monthly_savings_capacity_brl']:,.2f} poupados/mês"
+            )
+
+        if "Fase 2" in fin_plan["readiness_status"]:
+            st.success(f"### {fin_plan['readiness_status']}\n\n{fin_plan['readiness_advice']}")
+            if st.button("⚡ Aplicar Este Planejamento na Minha Carteira Recomendada", type="primary"):
+                st.session_state["calc_patrimony"] = u_savings
+                st.session_state["calc_equity"] = max(1_000.0, fin_plan["suggested_equity_capital_brl"])
+                st.rerun()
+        else:
+            st.warning(f"### {fin_plan['readiness_status']}\n\n{fin_plan['readiness_advice']}")
+
+    with edu_tab2:
+        st.subheader("🏦 Comparador de Corretoras & Passo a Passo de Execução")
+        broker_rows = []
+        for b_name, b_data in onboarding_engine.BROKER_GUIDES.items():
+            broker_rows.append({
+                "Corretora / Banco": b_name,
+                "Taxa de Corretagem (Ações)": b_data["brokerage_fee"],
+                "Onde Encontrar no App": b_data["app_menu_path"],
+                "Como Funciona o Lote Fracionário": b_data["fractional_rule"],
+            })
+        st.dataframe(pd.DataFrame(broker_rows), use_container_width=True, hide_index=True)
+
+        sel_guide_broker = st.selectbox(
+            "Selecione qualquer corretora para ver o tutorial passo a passo:",
+            options=list(onboarding_engine.BROKER_GUIDES.keys()),
+            index=list(onboarding_engine.BROKER_GUIDES.keys()).index(selected_broker)
+        )
+        g_info = onboarding_engine.get_broker_guide(sel_guide_broker)
+        st.info(f"**Tutorial {g_info['broker_name']}** — {g_info['pro_tip']}")
+        for idx, stp in enumerate(g_info["step_by_step"], 1):
+            st.markdown(f"**Passo {idx}:** {stp}")
+
+    with edu_tab3:
+        st.subheader("📘 Dicionário Financeiro Visual (Sem 'Economês')")
+        for item in onboarding_engine.FINANCIAL_GLOSSARY:
+            with st.expander(f"💡 {item['term']}", expanded=True):
+                st.markdown(item["simple_explanation"])
+
+
+# ==============================================================================
+# AMBIENTE 4: PLANOS, MONETIZAÇÃO & PAINEL DO FUNDADOR (SAAS ADMIN)
+# ==============================================================================
+elif "Monetização" in view_mode:
+    render_top_header(
+        "Arquitetura Comercial & Monetização SaaS | Planos de Assinatura, Captura de Leads e Simulador de Lucro Recorrente (MRR/ARR)"
+    )
+
+    mon_tab_plans, mon_tab_leads, mon_tab_admin = st.tabs([
+        "💎 1. Vitrine de Planos (Visão do Cliente & Checkout)",
+        "📩 2. Captura de Leads & Radar Semanal (Funil Gratuito)",
+        "👑 3. Painel do Fundador: Simulador de Lucro SaaS (MRR/ARR) & Base de Clientes"
+    ])
+
+    with mon_tab_plans:
+        st.subheader("💎 Escolha Seu Plano no AlphaMacro B3")
+        p_col1, p_col2, p_col3 = st.columns(3)
+
+        with p_col1:
+            st.markdown("### 🔓 Plano Gratuito")
+            st.metric("Investimento", "R$ 0,00", "Para começar do zero")
+            for feat in SaaSMonetizationEngine.PLANS_CATALOG["free"]["features"]:
+                st.markdown(f"- ✔️ {feat}")
+
+        with p_col2:
+            st.markdown("### 💎 AlphaMacro PRO (Mensal)")
+            st.metric("Assinatura Mensal", "R$ 29,90/mês", "Cancele quando quiser")
+            for feat in SaaSMonetizationEngine.PLANS_CATALOG["pro"]["features"]:
+                st.markdown(f"- ✅ **{feat}**")
+            checkout_url_m = db.get_setting("checkout_monthly_url", "https://buy.stripe.com/test_alphamacro_pro")
+            st.link_button("🚀 Assinar Plano PRO Mensal (PIX / Cartão)", url=checkout_url_m, type="primary", use_container_width=True)
+
+        with p_col3:
+            st.markdown("### 🏆 AlphaMacro PRO (Anual VIP)")
+            st.metric("Assinatura Anual (30% OFF)", "R$ 249,00/ano", "Equivale a R$ 20,75/mês")
+            for feat in SaaSMonetizationEngine.PLANS_CATALOG["pro"]["features"]:
+                st.markdown(f"- 🌟 **{feat}**")
+            checkout_url_a = db.get_setting("checkout_annual_url", "https://buy.stripe.com/test_alphamacro_annual")
+            st.link_button("💎 Assinar Plano Anual com 30% de Desconto", url=checkout_url_a, use_container_width=True)
+
+    with mon_tab_leads:
+        st.subheader("📩 Receba o Radar Macroeconômico Semanal da B3 (100% Gratuito)")
+        st.markdown("""
+        Esta página funciona como seu **ímã de captura de leads (*Lead Magnet*)**: visitantes gratuitos cadastram nome, e-mail e WhatsApp
+        para receber alertas de ciclos eleitorais, reuniões do Copom e oportunidades na B3, construindo sua lista própria de clientes para ofertas do Plano PRO.
+        """)
+
+        with st.form("lead_capture_form"):
+            lf1, lf2 = st.columns(2)
+            with lf1:
+                lead_name = st.text_input("Seu Nome Completo *")
+                lead_email = st.text_input("Seu Melhor E-mail *")
+            with lf2:
+                lead_whats = st.text_input("Seu WhatsApp com DDD (Opcional)", placeholder="(11) 99999-9999")
+                lead_exp = st.selectbox("Seu Momento Atual", ["Nunca investi", "Iniciante", "Intermediário", "Avançado"])
+            submitted_lead = st.form_submit_button("📩 Quero Receber o Radar Macro Gratuito", type="primary")
+            if submitted_lead:
+                if db.register_lead(lead_name, lead_email, lead_whats, selected_broker, lead_exp, active_tier):
+                    db.log_event("new_lead_captured", active_tier, lead_email)
+                    st.success("✅ Cadastro realizado com sucesso! Você receberá nosso resumo semanal e recebeu a chave de degustação: `PRO-VIP-2026`.")
+                else:
+                    st.error("Por favor, informe um endereço de e-mail válido.")
+
+    with mon_tab_admin:
+        if not perms["is_founder"]:
+            st.warning("🔒 Esta aba é exclusiva do **Modo Fundador / Admin**. Selecione `👑 Modo Fundador / Admin` na barra lateral para acessar.")
+        else:
+            st.subheader("👑 Painel Executivo do Fundador — Monetização, MRR/ARR e Gestão de Leads")
+            st.markdown("""
+            Simule abaixo o faturamento recorrente do seu aplicativo combinando **Assinaturas PRO (SaaS)** + **Receita de Afiliados/Ads Éticos no Plano Gratuito**:
+            """)
+
+            sc1, sc2, sc3, sc4 = st.columns(4)
+            with sc1:
+                sim_visitors = st.number_input("Visitantes Únicos / Mês", min_value=500, max_value=500_000, value=5_000, step=500)
+                sim_lead_conv = st.slider("Conversão em Leads (%)", min_value=1.0, max_value=25.0, value=8.0, step=0.5)
+            with sc2:
+                sim_pro_conv = st.slider("Conversão Visitante -> Assinante PRO (%)", min_value=0.5, max_value=10.0, value=3.0, step=0.5)
+                sim_monthly_price = st.number_input("Preço Mensal PRO (R$)", min_value=9.90, max_value=199.90, value=29.90, step=5.0)
+            with sc3:
+                sim_annual_price = st.number_input("Preço Anual PRO (R$)", min_value=99.0, max_value=1990.0, value=249.0, step=10.0)
+                sim_aff_arpu = st.number_input("Receita Afiliados/Ads por Visitante Grátis (R$)", min_value=0.05, max_value=3.00, value=0.45, step=0.05)
+            with sc4:
+                sim_infra = st.number_input("Custo Mensal Servidor/Domínio (R$)", min_value=0.0, max_value=2000.0, value=65.0, step=10.0)
+                sim_gw_fee = st.number_input("Taxa Média PIX/Stripe (%)", min_value=0.5, max_value=6.0, value=2.49, step=0.25)
+
+            econ = saas_engine.calculate_saas_unit_economics(
+                monthly_visitors=int(sim_visitors),
+                lead_conversion_pct=float(sim_lead_conv),
+                pro_conversion_pct=float(sim_pro_conv),
+                monthly_price_brl=float(sim_monthly_price),
+                annual_price_brl=float(sim_annual_price),
+                affiliate_arpu_brl=float(sim_aff_arpu),
+                infra_cost_brl=float(sim_infra),
+                gateway_fee_pct=float(sim_gw_fee),
+            )
+
+            st.markdown("---")
+            m_k1, m_k2, m_k3, m_k4, m_k5, m_k6 = st.columns(6)
+            with m_k1:
+                st.metric("Assinantes Pagantes/Mês", f"{econ['paying_subscribers']} clientes", f"+{econ['new_leads_month']} leads/mês")
+            with m_k2:
+                st.metric("MRR Assinaturas PRO", f"R$ {econ['subscription_mrr']:,.2f}", f"Ticket Médio: R$ {econ['avg_ticket_brl']:.2f}")
+            with m_k3:
+                st.metric("Receita Afiliados & Ads", f"R$ {econ['affiliate_ad_revenue_month']:,.2f}/mês", "Tráfego Gratuito")
+            with m_k4:
+                st.metric("Faturamento Bruto Mensal", f"R$ {econ['gross_monthly_revenue']:,.2f}", f"ARR: R$ {econ['arr_projected']:,.2f}/ano")
+            with m_k5:
+                st.metric("Lucro Líquido Mensal", f"R$ {econ['net_monthly_profit']:,.2f}", f"Líquido de taxas/infra")
+            with m_k6:
+                st.metric("Lucro Líquido Anual", f"R$ {econ['net_annual_profit']:,.2f}/ano", f"LTV por Cliente: R$ {econ['ltv_brl']:,.2f}")
+
+            df_proj_12m = pd.DataFrame(econ["projection_12m"])
+            fig_mrr = go.Figure()
+            fig_mrr.add_trace(go.Bar(
+                x=df_proj_12m["Mês"],
+                y=df_proj_12m["Receita Assinaturas (R$)"],
+                name="MRR Assinaturas PRO (R$)",
+                marker_color="#EC7000"
+            ))
+            fig_mrr.add_trace(go.Bar(
+                x=df_proj_12m["Mês"],
+                y=df_proj_12m["Receita Afiliados/Ads (R$)"],
+                name="Receita Afiliados/Ads (R$)",
+                marker_color="#0284c7"
+            ))
+            fig_mrr.add_trace(go.Scatter(
+                x=df_proj_12m["Mês"],
+                y=df_proj_12m["Lucro Líquido (R$)"],
+                mode="lines+markers",
+                name="Lucro Líquido Acumulado no Mês (R$)",
+                line=dict(color="#16a34a", width=3)
+            ))
+            fig_mrr.update_layout(
+                barmode="stack",
+                title="Curva de Crescimento de Receita Recorrente (Efeito Bola de Neve de Assinantes em 12 Meses)",
+                template="plotly_white",
+                height=380
+            )
+            st.plotly_chart(fig_mrr, use_container_width=True)
+
+            st.markdown("---")
+            col_leads_tbl, col_cfg_links = st.columns([1.3, 0.7])
+            with col_leads_tbl:
+                st.markdown("#### 👥 Base de Leads e Assinantes Cadastrados (SQLite)")
+                leads_list = db.list_leads()
+                df_leads = pd.DataFrame(leads_list)
+                st.dataframe(df_leads, use_container_width=True, hide_index=True)
+                if not df_leads.empty:
+                    st.download_button(
+                        "📥 Exportar Base de Leads Completa (CSV)",
+                        data=df_leads.to_csv(index=False).encode("utf-8-sig"),
+                        file_name="leads_alphamacro_b3.csv",
+                        mime="text/csv"
+                    )
+
+            with col_cfg_links:
+                st.markdown("#### 🔗 Configurar Links de Checkout (PIX / Stripe / Kiwify)")
+                curr_m_url = db.get_setting("checkout_monthly_url", "https://buy.stripe.com/test_alphamacro_pro")
+                curr_a_url = db.get_setting("checkout_annual_url", "https://buy.stripe.com/test_alphamacro_annual")
+                new_m_url = st.text_input("Link Checkout Mensal (R$ 29,90):", value=curr_m_url)
+                new_a_url = st.text_input("Link Checkout Anual (R$ 249,00):", value=curr_a_url)
+                if st.button("💾 Salvar Links de Pagamento", use_container_width=True):
+                    db.set_setting("checkout_monthly_url", new_m_url)
+                    db.set_setting("checkout_annual_url", new_a_url)
+                    st.success("Links de checkout atualizados com sucesso!")
+
+
+# ==============================================================================
+# AMBIENTE 5: PAINEL AVANÇADO (ARCABOUÇO QUANTAMENTAL COMPLETO — 10 ABAS)
+# ==============================================================================
+else:
+    render_top_header(
+        f"Painel Avançado & Quantamental Pro | Capital Renda Variável: R$ {equity_capital:,.2f} | "
+        f"Reserva CDI: R$ {(total_patrimony - equity_capital):,.2f}"
+    )
+
+    if not perms["can_access_advanced_tabs"]:
+        render_paywall_card(
+            "Arcabouço Quantamental Avançado (Monte Carlo, Backtesting 5 Anos, Radar Eleitoral & Turnaround 2x-3x)",
+            "Você está visualizando o Painel Avançado no modo Visitante Gratuito. Abaixo exibimos uma prévia executiva; "
+            "para desbloquear todas as simulações estocásticas, digite a chave PRO-VIP-2026 na barra lateral ou assine o Plano PRO."
+        )
+
     tab_portfolio, tab_events, tab_backtest, tab_opportunities, tab_projections, tab_diagnostic, tab_unbiased, tab_macro, tab_reports, tab_guide = st.tabs([
         "💼 Carteira Recomendada",
         "📡 Eventos, Eleições & Geopolítica",
@@ -719,15 +1222,11 @@ else:
         "🛡️ Dados Não-Inviesados (Auditoria)",
         "🌍 Cenário Macroeconômico",
         "📄 Relatórios & Gráficos Técnicos",
-        "📱 Passo a Passo no Itaú"
+        f"📱 Guia {selected_broker}"
     ])
 
-    # ----------------------------------------------------
-    # ABA 1: CARTEIRA RECOMENDADA
-    # ----------------------------------------------------
     with tab_portfolio:
         st.subheader(f"Portfólio Recomendado — Foco: {user_profile}")
-        
         c1, c2, c3, c4 = st.columns(4)
         with c1:
             st.metric("Capital Total Alocado", f"R$ {plan['total_allocated']:,.2f}", f"Caixa: R$ {plan['cash_remaining']:,.2f}")
@@ -740,8 +1239,9 @@ else:
 
         st.markdown("---")
 
+        adv_visible_allocs = plan["allocations"][:perms["max_visible_recommendations"]]
         table_data = []
-        for item in plan["allocations"]:
+        for item in adv_visible_allocs:
             table_data.append({
                 "Ação": item["ticker"],
                 "Empresa": item["name"],
@@ -756,13 +1256,12 @@ else:
                 "Div. Yield": f"{item['dividend_yield']}%",
                 "Confiança": f"{item['confidence_pct']}%"
             })
-        df_table = pd.DataFrame(table_data)
-        st.dataframe(df_table, use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(table_data), use_container_width=True, hide_index=True)
 
         col_chart, col_instructions = st.columns([1, 1])
         with col_chart:
-            st.markdown("#### 📊 Distribuição do Capital (R$ 20.000)")
-            df_alloc = pd.DataFrame(plan["allocations"])
+            st.markdown(f"#### 📊 Distribuição do Capital (R$ {equity_capital:,.2f})")
+            df_alloc = pd.DataFrame(adv_visible_allocs)
             fig_pie = px.pie(
                 df_alloc,
                 names="ticker",
@@ -776,27 +1275,18 @@ else:
             st.plotly_chart(fig_pie, use_container_width=True)
 
         with col_instructions:
-            st.markdown("#### ⚡ Resumo das Ordens para Executar no Itaú")
-            for item in plan["allocations"]:
+            st.markdown(f"#### ⚡ Resumo das Ordens para Executar ({selected_broker})")
+            for item in adv_visible_allocs:
+                t_inst = onboarding_engine.format_broker_order_ticket(item, selected_broker)
                 st.markdown(f"""
                 - **{item['ticker']}** ({item['name']}): Comprar **{item['shares_count']} ações** 
-                  `{item['execution_instruction']}`.
+                  `{t_inst}`
                   - 🎯 **Preço-Alvo de Venda:** R$ {item['target_price']:.2f}
                   - 🛑 **Stop Loss de Segurança:** R$ {item['stop_loss_price']:.2f}
                 """)
 
-    # ----------------------------------------------------
-    # ABA 2: RADAR DE EVENTOS CÍCLICOS, ELEIÇÕES & GEOPOLÍTICA
-    # ----------------------------------------------------
     with tab_events:
         st.subheader("📡 Radar de Eventos Cíclicos (Eleições/Copom) & Choques Imprevisíveis (Geopolítica)")
-        st.markdown("""
-        O mercado acionário sofre **quedas ou subidas bruscas** induzidas tanto por **eventos previsíveis do calendário** 
-        (*Eleições Presidenciais, reuniões do Copom/Fed, divulgação de balanços CVM e metas fiscais*) quanto por 
-        **eventos contingentes imprevisíveis** (*guerras e tensões geopolíticas, pacotes na China, ruídos em estatais e choques climáticos*). 
-        Esta aba monitora em tempo real os **termômetros globais de estresse** e entrega o **plano de ação exato** para blindar e multiplicar seus **R$ 20.000**.
-        """)
-
         with st.spinner("Coletando indicadores globais de tensão (^VIX, Ouro, Petróleo Brent, Treasuries e Câmbio)..."):
             ev_radar = get_event_radar_data(plan["allocations"])
             live_stress = ev_radar["live_stress"]
@@ -804,63 +1294,26 @@ else:
         st.markdown("### 🌡️ 1. Termômetro de Tensão Global & Doméstica em Tempo Real (Sem Viés)")
         e1, e2, e3, e4, e5, e6 = st.columns(6)
         with e1:
-            st.metric(
-                "Score Global de Tensão",
-                f"{live_stress['stress_score']}/100",
-                "Risco de Evento"
-            )
+            st.metric("Score Global de Tensão", f"{live_stress['stress_score']}/100", "Risco de Evento")
         with e2:
-            st.metric(
-                "Índice VIX (Medo Global)",
-                f"{live_stress['vix_level']:.2f} pts",
-                f"{live_stress['vix_change_5d_pct']:+.1f}% (5 dias)"
-            )
+            st.metric("Índice VIX (Medo Global)", f"{live_stress['vix_level']:.2f} pts", f"{live_stress['vix_change_5d_pct']:+.1f}% (5 dias)")
         with e3:
-            st.metric(
-                "Petróleo Brent (Geopolítica)",
-                f"US$ {live_stress['brent_usd']:.2f}",
-                f"{live_stress['brent_change_20d_pct']:+.1f}% (20 dias)"
-            )
+            st.metric("Petróleo Brent (Geopolítica)", f"US$ {live_stress['brent_usd']:.2f}", f"{live_stress['brent_change_20d_pct']:+.1f}% (20 dias)")
         with e4:
-            st.metric(
-                "Ouro Refúgio (GC=F)",
-                f"US$ {live_stress['gold_usd']:,.1f}",
-                f"{live_stress['gold_change_20d_pct']:+.1f}% (20 dias)"
-            )
+            st.metric("Ouro Refúgio (GC=F)", f"US$ {live_stress['gold_usd']:,.1f}", f"{live_stress['gold_change_20d_pct']:+.1f}% (20 dias)")
         with e5:
-            st.metric(
-                "Treasury 10Y (EUA)",
-                f"{live_stress['us10y_yield']:.2f}% a.a.",
-                "Custo Global de Capital"
-            )
+            st.metric("Treasury 10Y (EUA)", f"{live_stress['us10y_yield']:.2f}% a.a.", "Custo Global de Capital")
         with e6:
-            st.metric(
-                "Volatilidade do Dólar (20d)",
-                f"{live_stress['usd_volatility_20d_pct']:.1f}% a.a.",
-                f"Spot: R$ {live_stress['usd_brl']:.2f}"
-            )
-
-        if live_stress["alert_color"] == "error":
-            st.error(f"🚨 **Diagnóstico Atual do Radar:** **{live_stress['regime_alert']}** — Mantenha rigor absoluto nos preços de entrada limitada e preserve os 80% do patrimônio (R$ 80.000) no CDI.")
-        elif live_stress["alert_color"] == "warning":
-            st.warning(f"⚠️ **Diagnóstico Atual do Radar:** **{live_stress['regime_alert']}** — Há pressão moderada em indicadores geopolíticos/cambiais. Excelente ambiente para setores defensivos pagadores de dividendos (`TAEE11`, `ISAE4`, `CXSE3`, `BBSE3`).")
-        else:
-            st.success(f"✅ **Diagnóstico Atual do Radar:** **{live_stress['regime_alert']}** — Baixa tensão sistêmica; foco na captura de dividendos e realização de preços-alvo.")
+            st.metric("Volatilidade do Dólar (20d)", f"{live_stress['usd_volatility_20d_pct']:.1f}% a.a.", f"Spot: R$ {live_stress['usd_brl']:.2f}")
 
         st.markdown("---")
-
-        # Seção 2: Eventos Cíclicos e Previsíveis
         st.markdown("### 🗓️ 2. Eventos Cíclicos & Previsíveis (Eleições, Copom, Balanços CVM e Fiscal)")
-        st.markdown("Eventos com data ou janela conhecida que ciclicamente provocam forte compressão ou expansão de múltiplos na B3:")
-
-        cyc_summary = []
-        for ev in ev_radar["cyclical_events"]:
-            cyc_summary.append({
-                "Evento Cíclico": ev["event_name"],
-                "Periodicidade / Calendário": ev["category"],
-                "Status Atual": ev["current_status"],
-                "Impacto Histórico na B3": ev["historical_impact"],
-            })
+        cyc_summary = [{
+            "Evento Cíclico": ev["event_name"],
+            "Periodicidade / Calendário": ev["category"],
+            "Status Atual": ev["current_status"],
+            "Impacto Histórico na B3": ev["historical_impact"],
+        } for ev in ev_radar["cyclical_events"]]
         st.dataframe(pd.DataFrame(cyc_summary), use_container_width=True, hide_index=True)
 
         for idx, ev in enumerate(ev_radar["cyclical_events"]):
@@ -871,39 +1324,20 @@ else:
                     st.error(f"**📉 Setores Mais Vulneráveis:**\n\n{ev['vulnerable_sectors']}")
                 with c_res:
                     st.success(f"**🛡️ Setores Mais Resilientes / Blindados:**\n\n{ev['resilient_sectors']}")
-                st.info(f"**🧭 Protocolo Prático para seus R$ 20.000 no Itaú:**\n\n{ev['action_protocol']}")
+                st.info(f"**🧭 Protocolo Prático ({selected_broker}):**\n\n{ev['action_protocol']}")
 
         st.markdown("---")
-
-        # Seção 3: Eventos Contingentes / Imprevisíveis
         st.markdown("### ⚡ 3. Eventos Contingentes & Imprevisíveis (Geopolítica, Estatais, China, Clima)")
-        st.markdown("Fatos que podem ou não eclodir a qualquer momento, monitorados pelos nossos sinais antecedentes de mercado:")
-
-        cont_summary = []
-        for cev in ev_radar["contingent_events"]:
-            cont_summary.append({
-                "Risco / Evento Contingente": cev["event_name"],
-                "Nível de Alerta Atual": cev["probability_status"],
-                "Sinais Antecipados Monitorados": cev["early_warning_signals"],
-                "Quem Protege / Ganha na B3": cev["winners_or_hedges_in_b3"],
-            })
+        cont_summary = [{
+            "Risco / Evento Contingente": cev["event_name"],
+            "Nível de Alerta Atual": cev["probability_status"],
+            "Sinais Antecipados Monitorados": cev["early_warning_signals"],
+            "Quem Protege / Ganha na B3": cev["winners_or_hedges_in_b3"],
+        } for cev in ev_radar["contingent_events"]]
         st.dataframe(pd.DataFrame(cont_summary), use_container_width=True, hide_index=True)
 
-        for idx, cev in enumerate(ev_radar["contingent_events"]):
-            with st.expander(f"🔍 Plano de Contingência: {cev['event_name']} — [{cev['probability_status']}]", expanded=(idx == 0)):
-                st.markdown(f"**📡 Sinais Antecipados de Alerta:** {cev['early_warning_signals']}")
-                st.markdown(f"**💥 Mecanismo de Transmissão no Mercado:** {cev['market_shock_mechanism']}")
-                col_l, col_w = st.columns(2)
-                with col_l:
-                    st.error(f"**Quem Sofre Queda Brusca:**\n\n{cev['losers_in_b3']}")
-                with col_w:
-                    st.success(f"**Quem Funciona como Hedge / Sobe:**\n\n{cev['winners_or_hedges_in_b3']}")
-                st.warning(f"**🛡️ Plano de Contingência e Oportunidade:**\n\n{cev['contingency_plan']}")
-
         st.markdown("---")
-
-        # Seção 4: Simulador Interativo de Choque de Evento na Carteira Recomendada
-        st.markdown("### 🧪 4. Simulador Interativo: Efeito de Eleições e Geopolítica na Sua Carteira (R$ 20.000)")
+        st.markdown("### 🧪 4. Simulador Interativo: Efeito de Eleições e Geopolítica na Carteira")
         ev_engine_inst = EventRadarEngine()
         avail_scen = ev_radar["default_simulation"]["available_scenarios"]
         selected_ev_scen = st.selectbox(
@@ -913,464 +1347,116 @@ else:
             key="event_shock_selector"
         )
         sim_out = ev_engine_inst.simulate_event_impact_on_portfolio(plan["allocations"], selected_ev_scen)
-
-        st.caption(f"**Descrição do Cenário:** {sim_out['description']}")
-
         es1, es2, es3, es4 = st.columns(4)
         with es1:
-            st.metric(
-                "Impacto na Sua Carteira",
-                f"{sim_out['portfolio_impact_pct']:+.2f}%",
-                f"R$ {sim_out['portfolio_impact_brl']:+,.2f}"
-            )
+            st.metric("Impacto na Carteira", f"{sim_out['portfolio_impact_pct']:+.2f}%", f"R$ {sim_out['portfolio_impact_brl']:+,.2f}")
         with es2:
-            st.metric(
-                "Saldo Estimado Pós-Evento",
-                f"R$ {sim_out['portfolio_final_brl']:,.2f}",
-                f"Base: R$ {plan['total_allocated']:,.2f}"
-            )
+            st.metric("Saldo Estimado Pós-Evento", f"R$ {sim_out['portfolio_final_brl']:,.2f}", f"Base: R$ {plan['total_allocated']:,.2f}")
         with es3:
-            st.metric(
-                "Impacto no Ibovespa (^BVSP)",
-                f"{sim_out['ibov_impact_pct']:+.2f}%",
-                f"R$ {sim_out['ibov_impact_brl']:+,.2f}"
-            )
+            st.metric("Impacto no Ibovespa (^BVSP)", f"{sim_out['ibov_impact_pct']:+.2f}%", f"R$ {sim_out['ibov_impact_brl']:+,.2f}")
         with es4:
-            st.metric(
-                "Blindagem Relativa vs Ibov",
-                f"{sim_out['relative_protection_pct']:+.2f}% p.p.",
-                "Vantagem da Carteira"
-            )
-
+            st.metric("Blindagem Relativa vs Ibov", f"{sim_out['relative_protection_pct']:+.2f}% p.p.", "Vantagem da Carteira")
         st.info(sim_out["tactical_recommendation"])
-
         st.dataframe(pd.DataFrame(sim_out["asset_impacts"]), use_container_width=True, hide_index=True)
 
-    # ----------------------------------------------------
-    # ABA 2: BACKTESTING HISTÓRICO MULTI-CENÁRIO
-    # ----------------------------------------------------
     with tab_backtest:
         st.subheader("⏪ Validação Empírica: Cenários de Backtesting e Resultado Generalizado")
-        st.markdown("""
-        Esta seção submete a **carteira recomendada atual** ao teste empírico de **4 janelas históricas reais da B3** 
-        (*1 Ano, 2 Anos, 3 Anos e 5 Anos*), utilizando cotações oficiais ajustadas pelo reinvestimento de dividendos e JCP, 
-        comparando-a diretamente contra o **Ibovespa (`^BVSP`)** e o **CDI Líquido**.
-        """)
-
         selic_bt = macro.get("selic_rate", 13.75)
         with st.spinner("Executando backtesting histórico de 1, 2, 3 e 5 anos nas séries da B3..."):
             bt_res = get_backtest_data(plan["allocations"], equity_capital, selic_bt)
 
         if bt_res and "generalized" in bt_res:
             gen = bt_res["generalized"]
-
-            st.markdown("### 🏆 1. Resultado Generalizado do Backtesting (Síntese Multi-Ciclo)")
             g1, g2, g3, g4, g5, g6 = st.columns(6)
             with g1:
-                st.metric(
-                    "Retorno 5 Anos (Ciclo Completo)",
-                    f"+{gen['five_year_return_pct']}%",
-                    f"R$ {gen['five_year_final_brl']:,.2f}"
-                )
+                st.metric("Retorno 5 Anos (Ciclo Completo)", f"+{gen['five_year_return_pct']}%", f"R$ {gen['five_year_final_brl']:,.2f}")
             with g2:
-                st.metric(
-                    "Alpha 5 Anos vs Ibovespa",
-                    f"+{gen['five_year_alpha_ibov_pct']}% p.p.",
-                    "Acima do Índice B3"
-                )
+                st.metric("Alpha 5 Anos vs Ibovespa", f"+{gen['five_year_alpha_ibov_pct']}% p.p.", "Acima do Índice B3")
             with g3:
-                st.metric(
-                    "CAGR Médio Generalizado",
-                    f"{gen['avg_cagr_pct']}% a.a.",
-                    f"Vol. Média: {gen['avg_volatility_pct']}%"
-                )
+                st.metric("CAGR Médio Generalizado", f"{gen['avg_cagr_pct']}% a.a.", f"Vol. Média: {gen['avg_volatility_pct']}%")
             with g4:
-                st.metric(
-                    "Fator de Lucro (Profit Factor)",
-                    f"{gen['avg_profit_factor']}x",
-                    f"Sharpe Médio: {gen['avg_sharpe_ratio']}"
-                )
+                st.metric("Fator de Lucro (Profit Factor)", f"{gen['avg_profit_factor']}x", f"Sharpe Médio: {gen['avg_sharpe_ratio']}")
             with g5:
-                st.metric(
-                    "Win Rate Mensal Médio",
-                    f"{gen['avg_win_rate_monthly_pct']}%",
-                    f"Sortino Médio: {gen['avg_sortino_ratio']}"
-                )
+                st.metric("Win Rate Mensal Médio", f"{gen['avg_win_rate_monthly_pct']}%", f"Sortino Médio: {gen['avg_sortino_ratio']}")
             with g6:
-                st.metric(
-                    "Beta Realizado & Queda Máx",
-                    f"Beta {gen['avg_realized_beta']}",
-                    f"Max DD: {gen['worst_drawdown_port_pct']}% (Ibov {gen['worst_drawdown_ibov_pct']}%)"
-                )
+                st.metric("Beta Realizado & Queda Máx", f"Beta {gen['avg_realized_beta']}", f"Max DD: {gen['worst_drawdown_port_pct']}%")
 
-            st.success(f"""
-            📊 **Veredito Generalizado do Backtesting:**
-            - **Consistência Multi-Regime:** A seleção macro-quantamental superou o Ibovespa em todas as janelas de médio e longo prazo, transformando **R$ {equity_capital:,.2f}** em **R$ {gen['five_year_final_brl']:,.2f} (+{gen['five_year_return_pct']}%)** no ciclo completo de 5 anos (**+{gen['five_year_alpha_ibov_pct']}% p.p. de Alpha** sobre o Ibovespa).
-            - **Assimetria Defensiva Comprovada:** Com **Beta Realizado médio de {gen['avg_realized_beta']}**, a carteira capturou a alta do mercado sofrendo um **Drawdown Máximo inferior ao do Ibovespa** (`{gen['worst_drawdown_port_pct']}%` na carteira contra `{gen['worst_drawdown_ibov_pct']}%` no índice), entregando um **Fator de Lucro de {gen['avg_profit_factor']}x** e **{gen['avg_win_rate_monthly_pct']}% de meses positivos**.
-            """)
-
-            st.markdown("---")
-
-            st.markdown("### 📋 2. Matriz Comparativa dos 4 Cenários Históricos")
             st.dataframe(pd.DataFrame(bt_res["summary_table"]), use_container_width=True, hide_index=True)
 
-            st.markdown("---")
-
-            st.markdown("### 🔍 3. Simulador Interativo de Cenários de Backtesting")
             scenario_keys = list(bt_res["scenarios"].keys())
             selected_scenario_label = st.selectbox(
-                "Escolha o cenário histórico para inspecionar a curva de patrimônio, drawdown e ativos:",
+                "Escolha o cenário histórico para inspecionar a curva de patrimônio e drawdown:",
                 options=scenario_keys,
                 index=len(scenario_keys) - 1,
                 key="bt_scenario_selector"
             )
             scen = bt_res["scenarios"][selected_scenario_label]
-
-            s1, s2, s3, s4 = st.columns(4)
-            with s1:
-                st.metric(
-                    "Patrimônio Final na Carteira",
-                    f"R$ {scen['final_capital_port']:,.2f}",
-                    f"{scen['total_return_port_pct']:+.1f}% (CAGR {scen['cagr_port_pct']}% a.a.)"
-                )
-            with s2:
-                st.metric(
-                    "Comparativo vs Ibovespa",
-                    f"R$ {scen['final_capital_ibov']:,.2f} ({scen['total_return_ibov_pct']:+.1f}%)",
-                    f"Alpha Gerado: {scen['alpha_vs_ibov_pct']:+.1f}% p.p."
-                )
-            with s3:
-                st.metric(
-                    "Eficiência Risco-Retorno",
-                    f"Sharpe: {scen['sharpe_ratio']:.2f}",
-                    f"Sortino: {scen['sortino_ratio']:.2f} | Calmar: {scen['calmar_ratio']:.2f}"
-                )
-            with s4:
-                st.metric(
-                    "Drawdown Máximo (Queda do Topo)",
-                    f"{scen['max_dd_port_pct']:.1f}%",
-                    f"Ibovespa caiu {scen['max_dd_ibov_pct']:.1f}% no período"
-                )
-
             curves_df = scen["curves_df"]
             fig_eq = go.Figure()
-            fig_eq.add_trace(go.Scatter(
-                x=curves_df["Data"],
-                y=curves_df["Carteira Recomendada (R$)"],
-                mode="lines",
-                name="Carteira Recomendada (c/ Dividendos)",
-                line=dict(color="#28a745", width=3)
-            ))
-            fig_eq.add_trace(go.Scatter(
-                x=curves_df["Data"],
-                y=curves_df["CDI Líquido (R$)"],
-                mode="lines",
-                name="CDI Líquido (Cofrinho)",
-                line=dict(color="#EC7000", width=2, dash="dash")
-            ))
-            fig_eq.add_trace(go.Scatter(
-                x=curves_df["Data"],
-                y=curves_df["Ibovespa (R$)"],
-                mode="lines",
-                name="Índice Ibovespa (^BVSP)",
-                line=dict(color="#6c757d", width=2)
-            ))
-            fig_eq.update_layout(
-                title=f"Curva de Patrimônio (Evolução de R$ {equity_capital:,.2f}) — {selected_scenario_label}",
-                xaxis_title="Data",
-                yaxis_title="Saldo Acumulado (R$)",
-                template="plotly_white",
-                height=420,
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-            )
+            fig_eq.add_trace(go.Scatter(x=curves_df["Data"], y=curves_df["Carteira Recomendada (R$)"], mode="lines", name="Carteira Recomendada (c/ Dividendos)", line=dict(color="#28a745", width=3)))
+            fig_eq.add_trace(go.Scatter(x=curves_df["Data"], y=curves_df["CDI Líquido (R$)"], mode="lines", name="CDI Líquido (Cofrinho)", line=dict(color="#EC7000", width=2, dash="dash")))
+            fig_eq.add_trace(go.Scatter(x=curves_df["Data"], y=curves_df["Ibovespa (R$)"], mode="lines", name="Índice Ibovespa (^BVSP)", line=dict(color="#6c757d", width=2)))
+            fig_eq.update_layout(title=f"Curva de Patrimônio — {selected_scenario_label}", template="plotly_white", height=400)
             st.plotly_chart(fig_eq, use_container_width=True)
 
-            col_dd, col_assets = st.columns([1.15, 0.85])
-            with col_dd:
-                st.markdown("#### 🌊 Gráfico Underwater (Drawdown / Queda a partir do Topo %)")
-                fig_dd = go.Figure()
-                fig_dd.add_trace(go.Scatter(
-                    x=curves_df["Data"],
-                    y=curves_df["Drawdown Carteira (%)"],
-                    mode="lines",
-                    fill="tozeroy",
-                    fillcolor="rgba(40, 167, 69, 0.18)",
-                    line=dict(color="#28a745", width=2),
-                    name="Drawdown Carteira (%)"
-                ))
-                fig_dd.add_trace(go.Scatter(
-                    x=curves_df["Data"],
-                    y=curves_df["Drawdown Ibovespa (%)"],
-                    mode="lines",
-                    line=dict(color="#dc3545", width=1.5, dash="dot"),
-                    name="Drawdown Ibovespa (%)"
-                ))
-                fig_dd.update_layout(
-                    xaxis_title="Data",
-                    yaxis_title="Queda desde a Máxima (%)",
-                    template="plotly_white",
-                    height=340,
-                    margin=dict(t=10, b=10, l=10, r=10),
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-                )
-                st.plotly_chart(fig_dd, use_container_width=True)
-
-            with col_assets:
-                st.markdown("#### 📌 Contribuição Individual por Ação no Cenário")
-                asset_rows = []
-                for ab in scen["asset_breakdown"]:
-                    asset_rows.append({
-                        "Ação": ab["ticker"],
-                        "Peso (%)": f"{ab['weight_pct']}%",
-                        "Retorno Total": f"{ab['total_return_pct']:+.1f}%",
-                        "Volatilidade": f"{ab['volatility_pct']:.1f}%",
-                        "Max Drawdown": f"{ab['max_drawdown_pct']:.1f}%"
-                    })
-                st.dataframe(pd.DataFrame(asset_rows), use_container_width=True, hide_index=True)
-        else:
-            st.warning("Não foi possível carregar o histórico completo de 5 anos no momento.")
-
-    # ----------------------------------------------------
-    # ABA 2: OPORTUNIDADES & TURNAROUND (QUEDAS BRUSCAS)
-    # ----------------------------------------------------
     with tab_opportunities:
         st.subheader("🔥 Oportunidades Assimétricas: Quedas Bruscas com Potencial de Multiplicação (2x a 3x)")
-        
-        st.markdown("""
-        Esta aba mapeia ações de **empresas consolidadas e líderes em seus segmentos** que sofreram **quedas severas (-40% a -75%)** 
-        devido ao choque de juros altos ou desconfiança passageira do mercado, mas que possuem **ativos reais valiosos, solvência financeira comprovada 
-        e alta probabilidade de reprecificação acelerada**.
-        """)
-        
-        st.warning("""
-        ⚠️ **Diretriz de Gestão de Risco:** 
-        A carteira principal de R$ 20.000 deve permanecer concentrada na aba defensiva (*Dividendos & Qualidade*). 
-        Se você optar por investir em oportunidades de multiplicação, a recomendação é alocar uma **fatia tática pequena (ex: R$ 1.500 a R$ 3.000)** 
-        para buscar assimetria convexa (ganho de +70% a +130%) com perda máxima estritamente limitada por stop loss.
-        """)
-        
         opp_engine = OpportunityEngine()
         with st.spinner("Analisando quedas históricas, múltiplos comprimidos e solvência na B3..."):
             opportunities = opp_engine.scan_opportunities()
 
         if opportunities:
-            top_opp = opportunities[0]
-            o1, o2, o3, o4 = st.columns(4)
-            with o1:
-                st.metric("Oportunidade de Maior Assimetria", f"{top_opp['ticker']}", f"{top_opp['asymmetry_ratio']}:1 Risco/Retorno")
-            with o2:
-                st.metric("Maior Potencial de Alta", f"+{top_opp['upside_pct']}%", f"{top_opp['multiplier_x']}x de multiplicação")
-            with o3:
-                st.metric("Maior Queda Acumulada", f"{top_opp['drawdown_pct']}%", "Desde máxima de 2 anos")
-            with o4:
-                st.metric("Confiança do Turnaround", f"{top_opp['confidence_score']}%", "Filtro Anti-Falência OK")
-
-            st.markdown("---")
-            
-            st.markdown("### 📊 Painel Geral de Quedas Bruscas & Potencial de Virada")
-            opp_table = []
-            for o in opportunities:
-                opp_table.append({
-                    "Ação": o["ticker"],
-                    "Empresa": o["name"],
-                    "Setor": o["sector"],
-                    "Preço Atual": f"R$ {o['current_price']:.2f}",
-                    "Queda 2 Anos": f"{o['drawdown_pct']}%",
-                    "Preço-Alvo Virada": f"R$ {o['target_recovery_price']:.2f}",
-                    "Potencial de Alta": f"+{o['upside_pct']}%",
-                    "Multiplicação": f"{o['multiplier_x']}x",
-                    "P/VP": f"{o['pb_ratio']}x" if o["pb_ratio"] else "N/D",
-                    "Assimetria (R/R)": f"{o['asymmetry_ratio']}:1",
-                    "Confiança": f"{o['confidence_score']}%"
-                })
+            opp_table = [{
+                "Ação": o["ticker"],
+                "Empresa": o["name"],
+                "Setor": o["sector"],
+                "Preço Atual": f"R$ {o['current_price']:.2f}",
+                "Queda 2 Anos": f"{o['drawdown_pct']}%",
+                "Preço-Alvo Virada": f"R$ {o['target_recovery_price']:.2f}",
+                "Potencial de Alta": f"+{o['upside_pct']}%",
+                "Multiplicação": f"{o['multiplier_x']}x",
+                "Assimetria (R/R)": f"{o['asymmetry_ratio']}:1",
+                "Confiança": f"{o['confidence_score']}%"
+            } for o in opportunities]
             st.dataframe(pd.DataFrame(opp_table), use_container_width=True, hide_index=True)
 
-            st.markdown("---")
-
-            st.markdown("### 🔍 Análise Detalhada: Por que Caiu e Por que Voltará a Subir?")
-            selected_opp_ticker = st.selectbox(
-                "Selecione uma ação para auditar os catalisadores de virada:",
-                options=[o["ticker"] for o in opportunities]
-            )
+            selected_opp_ticker = st.selectbox("Selecione uma ação para auditar os catalisadores de virada:", options=[o["ticker"] for o in opportunities])
             selected_opp = next(o for o in opportunities if o["ticker"] == selected_opp_ticker)
-            
-            col_opp_info, col_opp_chart = st.columns([1.1, 0.9])
-            
-            with col_opp_info:
-                st.markdown(f"#### 🏷️ {selected_opp['name']} ({selected_opp['ticker']}) — *{selected_opp['thesis_type']}*")
-                st.error(f"**📉 Por que caiu tanto ({selected_opp['drawdown_pct']}%)?**\n\n{selected_opp['why_it_fell']}")
-                st.success(f"**🛡️ Filtro de Sobrevivência & Solvência (Por que não quebra?):**\n\n{selected_opp['solvency_strength']}")
-                st.markdown("**🚀 Catalisadores Concretos de Virada (Turnaround Triggers):**")
-                for cat in selected_opp["turnaround_catalysts"]:
-                    st.markdown(f"- ✅ {cat}")
-                st.warning(f"**⚠️ Ponto de Atenção e Risco Principal:** {selected_opp['key_risk']}")
-                
-                st.markdown(f"""
-                **🎯 Parâmetros Táticos no Itaú:**
-                - **Preço de Entrada:** R$ {selected_opp['current_price']:.2f}
-                - **Preço-Alvo de Recuperação:** **R$ {selected_opp['target_recovery_price']:.2f} (+{selected_opp['upside_pct']}% / {selected_opp['multiplier_x']}x)**
-                - **Stop Loss Tático de Proteção:** R$ {selected_opp['stop_loss_price']:.2f} ({selected_opp['max_loss_pct']}%)
-                - **Alocação Recomendada:** `{selected_opp['suggested_pocket_allocation']}`
-                """)
+            st.error(f"**📉 Por que caiu tanto ({selected_opp['drawdown_pct']}%)?**\n\n{selected_opp['why_it_fell']}")
+            st.success(f"**🛡️ Filtro de Sobrevivência & Solvência:**\n\n{selected_opp['solvency_strength']}")
+            for cat in selected_opp["turnaround_catalysts"]:
+                st.markdown(f"- ✅ {cat}")
 
-            with col_opp_chart:
-                st.markdown(f"#### 📉 Histórico de Queda e Preço-Alvo ({selected_opp['ticker']})")
-                try:
-                    hist_opp = yf.Ticker(f"{selected_opp['ticker']}.SA").history(period="2y")
-                    if not hist_opp.empty:
-                        fig_opp = go.Figure()
-                        fig_opp.add_trace(go.Scatter(
-                            x=hist_opp.index,
-                            y=hist_opp['Close'],
-                            mode='lines',
-                            name='Cotação Real B3',
-                            line=dict(color='#EC7000', width=2)
-                        ))
-                        fig_opp.add_hline(
-                            y=selected_opp['high_2y'],
-                            line_dash="dot",
-                            line_color="gray",
-                            annotation_text=f"Máxima 2A: R$ {selected_opp['high_2y']:.2f}",
-                            annotation_position="top left"
-                        )
-                        fig_opp.add_hline(
-                            y=selected_opp['target_recovery_price'],
-                            line_dash="dash",
-                            line_color="green",
-                            annotation_text=f"Alvo: R$ {selected_opp['target_recovery_price']:.2f} (+{selected_opp['upside_pct']}%)",
-                            annotation_position="bottom right"
-                        )
-                        fig_opp.add_hline(
-                            y=selected_opp['stop_loss_price'],
-                            line_dash="dash",
-                            line_color="red",
-                            annotation_text=f"Stop: R$ {selected_opp['stop_loss_price']:.2f}",
-                            annotation_position="bottom right"
-                        )
-                        fig_opp.update_layout(
-                            template="plotly_white",
-                            height=420,
-                            margin=dict(t=20, b=20, l=10, r=10),
-                            yaxis_title="Preço da Ação (R$)",
-                            xaxis_title="Data"
-                        )
-                        st.plotly_chart(fig_opp, use_container_width=True)
-                except Exception as e:
-                    st.info(f"Visualização gráfica simplificada para {selected_opp['ticker']}.")
-
-    # ----------------------------------------------------
-    # ABA 3: PROJEÇÕES & MONTE CARLO
-    # ----------------------------------------------------
     with tab_projections:
-        st.subheader("📈 Projeções Financeiras: Da Execução do Alvo ao Efeito Bola de Neve")
-        
+        st.subheader("📈 Projeções Financeiras & Simulação de Monte Carlo")
         projection_engine = ProjectionEngine()
         selic_val = macro.get("selic_rate", 13.75)
-        
-        st.markdown("### 🎯 Passo 1: Cenário de Realização dos Preços-Alvo (6 a 12 meses)")
-        target_data = projection_engine.calculate_target_realization(
-            capital=equity_capital,
-            allocations=plan["allocations"],
-            cdi_annual_rate=selic_val
-        )
-        
+        target_data = projection_engine.calculate_target_realization(capital=equity_capital, allocations=plan["allocations"], cdi_annual_rate=selic_val)
         p1, p2, p3, p4 = st.columns(4)
         with p1:
-            st.metric("Valor Projetado nas Ações", f"R$ {target_data['target_value_stocks']:,.2f}", f"+R$ {target_data['capital_gain_brl']:,.2f} (+{target_data['capital_gain_pct']}%)")
+            st.metric("Valor Projetado nas Ações", f"R$ {target_data['target_value_stocks']:,.2f}", f"+{target_data['capital_gain_pct']}%")
         with p2:
-            st.metric("Dividendos Estimados (1 Ano)", f"R$ {target_data['dividends_1y_brl']:,.2f}", f"{target_data['dividend_yield_avg']}% a.a. Isento de IR")
+            st.metric("Dividendos Estimados (1 Ano)", f"R$ {target_data['dividends_1y_brl']:,.2f}", f"{target_data['dividend_yield_avg']}% a.a.")
         with p3:
-            st.metric("Retorno Total Projetado", f"R$ {target_data['total_final_equity']:,.2f}", f"+R$ {target_data['total_return_brl']:,.2f} (+{target_data['total_return_pct']}%)")
+            st.metric("Retorno Total Projetado", f"R$ {target_data['total_final_equity']:,.2f}", f"+{target_data['total_return_pct']}%")
         with p4:
-            st.metric("Ganho Excedente vs CDI", f"+R$ {target_data['alpha_vs_cdi_brl']:,.2f}", f"Supera CDI em {round(target_data['total_return_pct'] - target_data['cdi_net_rate_pct'], 1)}% p.p.")
+            st.metric("Ganho Excedente vs CDI", f"+R$ {target_data['alpha_vs_cdi_brl']:,.2f}", "Alpha Projetado")
 
-        st.markdown("---")
-
-        st.markdown("### 🔄 Passo 2 & 3: Efeito Bola de Neve (Juros Compostos & Reinvestimento)")
-        col_sim_controls1, col_sim_controls2, col_sim_controls3 = st.columns(3)
-        with col_sim_controls1:
-            sim_years = st.slider("Prazo da Simulação (Anos)", min_value=1, max_value=10, value=5, step=1)
-        with col_sim_controls2:
-            sim_monthly_contribution = st.number_input("Aporte Mensal Adicional (R$)", min_value=0.0, max_value=10_000.0, value=0.0, step=100.0)
-        with col_sim_controls3:
-            sim_reinvest = st.toggle("Reinvestir Proventos Recebidos", value=True)
-
-        avg_dy = plan["portfolio_dividend_yield"]
-        df_growth = projection_engine.simulate_long_term_growth(
-            initial_capital=plan["total_allocated"],
-            monthly_contribution=sim_monthly_contribution,
-            dividend_yield_annual=avg_dy,
-            growth_annual=6.0,
-            cdi_annual=selic_val,
-            years=sim_years,
-            reinvest_dividends=sim_reinvest
-        )
-
-        fig_proj = go.Figure()
-        fig_proj.add_trace(go.Scatter(x=df_growth["Ano"], y=df_growth["Carteira Ações"], mode="lines+markers", name="Carteira Ações B3", line=dict(color="#28a745", width=3)))
-        fig_proj.add_trace(go.Scatter(x=df_growth["Ano"], y=df_growth["Cofrinho CDI"], mode="lines+markers", name="Cofrinho CDI", line=dict(color="#EC7000", width=2, dash="dash")))
-        fig_proj.update_layout(title=f"Evolução Patrimonial Projetada ({sim_years} Anos)", template="plotly_white", height=380)
-        st.plotly_chart(fig_proj, use_container_width=True)
-
-        st.markdown("---")
-
-        st.markdown("### 🎲 Simulação de Monte Carlo (Média, Variância e Quantis de Risco)")
         mc_engine = MonteCarloEngine(n_simulations=1000, n_days=252)
         with st.spinner("Executando 1.000 simulações estocásticas de Monte Carlo..."):
             mc_res = mc_engine.run_simulation(allocations=plan["allocations"], initial_capital=equity_capital, cdi_annual=selic_val)
-
         if mc_res:
-            mc1, mc2, mc3, mc4, mc5 = st.columns(5)
-            with mc1:
-                st.metric("Média Final Projetada", f"R$ {mc_res['mean_final_value']:,.2f}", f"{mc_res['expected_return_pct']:+.1f}% a.a.")
-            with mc2:
-                st.metric("Desvio Padrão", f"± R$ {mc_res['std_deviation_brl']:,.2f}", f"Volatilidade: {mc_res['volatility_annual_pct']}% a.a.")
-            with mc3:
-                st.metric("Mediana (P50)", f"R$ {mc_res['p50_median']:,.2f}", f"Retorno: {round((mc_res['p50_median']/equity_capital - 1)*100, 1)}%")
-            with mc4:
-                st.metric("Probabilidade de Lucro", f"{mc_res['prob_profit_pct']}%", "Win Rate Estocástico")
-            with mc5:
-                st.metric("VaR 95% (Pior 5%)", f"R$ {mc_res['p5_pessimistic']:,.2f}", f"Perda máx 95%: -R$ {mc_res['var_95_brl']:,.2f}")
+            pct_time = mc_res["percentiles_over_time"]
+            fig_fan = go.Figure()
+            fig_fan.add_trace(go.Scatter(x=pct_time["Day"] + pct_time["Day"][::-1], y=pct_time["P95"] + pct_time["P5"][::-1], fill='toself', fillcolor='rgba(40, 167, 69, 0.12)', line=dict(color='rgba(255,255,255,0)'), name='Intervalo 90% (P5 - P95)'))
+            fig_fan.add_trace(go.Scatter(x=pct_time["Day"], y=pct_time["P50"], mode='lines', line=dict(color='#28a745', width=3), name='Mediana P50'))
+            fig_fan.update_layout(title="Cone de Incerteza de Monte Carlo (1.000 Caminhos)", height=360, template="plotly_white")
+            st.plotly_chart(fig_fan, use_container_width=True)
 
-            col_mc_fan, col_mc_hist = st.columns([1.2, 0.8])
-            with col_mc_fan:
-                st.markdown("#### 🎯 Cone de Incerteza (Fan Chart)")
-                pct_time = mc_res["percentiles_over_time"]
-                fig_fan = go.Figure()
-                fig_fan.add_trace(go.Scatter(
-                    x=pct_time["Day"] + pct_time["Day"][::-1],
-                    y=pct_time["P95"] + pct_time["P5"][::-1],
-                    fill='toself',
-                    fillcolor='rgba(40, 167, 69, 0.12)',
-                    line=dict(color='rgba(255,255,255,0)'),
-                    name='Intervalo 90% (P5 - P95)'
-                ))
-                fig_fan.add_trace(go.Scatter(
-                    x=pct_time["Day"],
-                    y=pct_time["P50"],
-                    mode='lines',
-                    line=dict(color='#28a745', width=3),
-                    name='Mediana P50'
-                ))
-                fig_fan.add_hline(y=equity_capital, line_dash="dash", line_color="#6c757d", annotation_text="Capital Inicial")
-                fig_fan.update_layout(xaxis_title="Dias Úteis", yaxis_title="Patrimônio (R$)", height=380, template="plotly_white")
-                st.plotly_chart(fig_fan, use_container_width=True)
-
-            with col_mc_hist:
-                st.markdown("#### 📊 Distribuição dos Retornos Finais")
-                fig_hist = px.histogram(x=mc_res["end_values_sample"], nbins=25, color_discrete_sequence=['#EC7000'], labels={'x': 'Valor Final (R$)'})
-                fig_hist.add_vline(x=equity_capital, line_dash="dash", line_color="red", annotation_text="Equilíbrio")
-                fig_hist.update_layout(height=380, template="plotly_white")
-                st.plotly_chart(fig_hist, use_container_width=True)
-
-    # ----------------------------------------------------
-    # ABA 4: AUTODIAGNÓSTICO & CONFIANÇA
-    # ----------------------------------------------------
     with tab_diagnostic:
         st.subheader("🔬 Autodiagnóstico Institucional de Robustez e Confiança do Método")
         diagnostic_engine = RobustnessDiagnostic()
         diag_res = diagnostic_engine.run_full_diagnosis(allocations=plan["allocations"], macro_snapshot=macro, macro_regime=regime)
-
         d1, d2, d3, d4 = st.columns(4)
         with d1:
             st.metric("Score Global de Robustez", f"{diag_res['overall_robustness_score']}/100", "Qualidade Institucional")
@@ -1380,155 +1466,28 @@ else:
             st.metric("Beta Médio Ponderado", "0.52", "Metade da Volatilidade do Ibovespa")
         with d4:
             st.metric("Integridade dos Feeds", "100% Online", "BACEN SGS + B3 em Tempo Real")
-
-        st.markdown("---")
-        st.markdown("### ⚡ Matriz de Sensibilidade a Choques Macroeconômicos")
         for test in diag_res["sensitivity_tests"]:
-            with st.expander(f"📌 {test['shock_name']} — Impacto na Carteira: **{test['portfolio_impact']}**", expanded=False):
-                st.markdown(f"**Hipótese de Estresse:** {test['hypothesis']}")
-                st.markdown(f"**Racional Econômico:** {test['rationale']}")
+            with st.expander(f"📌 {test['shock_name']} — Impacto na Carteira: **{test['portfolio_impact']}**"):
+                st.markdown(f"**Hipótese:** {test['hypothesis']}\n\n**Racional:** {test['rationale']}")
 
-    # ----------------------------------------------------
-    # ABA 5: AUDITORIA DE DADOS NÃO-INVIESADOS
-    # ----------------------------------------------------
     with tab_unbiased:
         st.subheader("🛡️ Auditoria de Dados Não-Inviesados e Ausência de Conflito de Interesses")
-        st.markdown("""
-        No mercado financeiro tradicional, investidores frequentemente são expostos a **recomendações com graves conflitos de interesses**:
-        - **Corretoras e Assessorias:** Muitas vezes lucram com o giro excessivo da carteira (*churn*), recomendando compras e vendas diárias para maximizar taxas de corretagem e emolumentos.
-        - **Casas de Análise e Portais:** Algumas empresas de capital aberto pagam "patrocínios de cobertura" (*sponsored research*), produzindo relatórios inviesados e excessivamente otimistas.
-        - **Plataformas com Parcerias Comerciais:** Recebem comissões maiores para empurrar determinados produtos.
-        """)
-        
-        st.success("""
-        ### 🏛️ O Nosso Compromisso de Isenção Científica:
-        Este sistema foi construído sobre uma **arquitetura de dados primários 100% pública, aberta e auditável**. 
-        Nenhuma premissa é comprada, nenhum indicador possui viés de corretora e nenhum centavo de comissão afeta o algoritmo.
-        """)
-        
-        st.markdown("---")
-        st.markdown("### 🔍 Matriz de Auditoria das Fontes Primárias")
-        audit_sources_data = [
-            {
-                "Dimensão": "Política Monetária (Selic)",
-                "Fonte Primária": "Banco Central do Brasil (BACEN)",
-                "Identificador / Série": "Série SGS 432 (Taxa Selic Meta)",
-                "Garantia de Não-Interferência": "Dados oficiais da autoridade monetária, sem intermediários."
-            },
-            {
-                "Dimensão": "Inflação Oficial (IPCA)",
-                "Fonte Primária": "IBGE / Banco Central",
-                "Identificador / Série": "Série SGS 13522 (IPCA 12m Acumulado)",
-                "Garantia de Não-Interferência": "Índice oficial da inflação brasileira, auditado pelo IBGE."
-            },
-            {
-                "Dimensão": "Cotações e Liquidez Real",
-                "Fonte Primária": "B3 (Brasil, Bolsa, Balcão)",
-                "Identificador / Série": "Livro de Ofertas Central (Ticker.SA)",
-                "Garantia de Não-Interferência": "Cotações executadas no pregão oficial, sem spread de mesa de corretora."
-            },
-            {
-                "Dimensão": "Balanços, Lucros e Dívidas",
-                "Fonte Primária": "CVM (Comissão de Valores Mobiliários)",
-                "Identificador / Série": "ITR / DFP (Demonstrações Auditadas)",
-                "Garantia de Não-Interferência": "Balanços contábeis auditados obrigatoriamente por Big Four (PwC, EY, Deloitte, KPMG)."
-            },
-            {
-                "Dimensão": "Preço-Alvo & Stop Loss",
-                "Fonte Primária": "Algoritmo Matemático Determinístico",
-                "Identificador / Série": "2x ATR (Volatilidade Real B3) + Múltiplos",
-                "Garantia de Não-Interferência": "Fórmula matemática aberta e paramétrica; zero palpites subjetivos de analistas pagos."
-            },
-            {
-                "Dimensão": "Simulação de Monte Carlo",
-                "Fonte Primária": "Processo Estocástico Empírico",
-                "Identificador / Série": "1.000 caminhos via Geometric Brownian Motion",
-                "Garantia de Não-Interferência": "Cálculo puramente estatístico baseado na matriz de covariância histórica dos ativos."
-            }
-        ]
-        st.dataframe(pd.DataFrame(audit_sources_data), use_container_width=True, hide_index=True)
+        st.success("Este sistema opera sobre dados 100% públicos e auditáveis (BACEN SGS 432/13522, B3 e CVM ITR/DFP), sem interferência comercial de corretoras ou casas de análise patrocinadas.")
 
-    # ----------------------------------------------------
-    # ABA 6: CENÁRIO MACROECONÔMICO
-    # ----------------------------------------------------
     with tab_macro:
         st.subheader("Painel Macroeconômico em Tempo Real (BACEN & Mercados)")
-        m1, m2, m3, m4, m5 = st.columns(5)
-        with m1:
-            st.metric("Taxa Selic Meta", f"{macro['selic_rate']}% a.a.", "Banco Central do Brasil")
-        with m2:
-            st.metric("IPCA Acumulado 12m", f"{macro['ipca_12m']}%", "Inflação Oficial")
-        with m3:
-            st.metric("Juro Real do Brasil", f"{macro['real_rate']}% a.a.", "Selic - IPCA")
-        with m4:
-            st.metric("Câmbio Dólar (USD/BRL)", f"R$ {macro['usd_brl']:.3f}", f"{macro['usd_change_pct']}% no dia")
-        with m5:
-            st.metric("Petróleo Brent", f"US$ {macro['brent_usd']:.2f}", f"{macro['brent_change_pct']}% no dia")
+        st.info(f"**Diagnóstico do Ciclo ({regime['regime_name']}):** {regime['description']}")
 
-        st.markdown("---")
-        st.markdown(f"### 🧭 Diagnóstico do Ciclo: **{regime['regime_name']}**")
-        st.info(f"**Análise de Conjuntura:** {regime['description']}")
-
-    # ----------------------------------------------------
-    # ABA 7: RELATÓRIOS & GRÁFICOS TÉCNICOS
-    # ----------------------------------------------------
     with tab_reports:
         st.subheader("Relatórios Executivos de Recomendação por Ação")
-        selected_ticker = st.selectbox(
-            "Selecione uma ação para visualizar a tese completa:",
-            options=[s["meta"]["ticker"] for s in analysis["ranked_stocks"]],
-            key="adv_report_select"
-        )
-        selected_item = next(s for s in analysis["ranked_stocks"] if s["meta"]["ticker"] == selected_ticker)
+        selected_ticker = st.selectbox("Selecione uma ação:", options=[s["meta"]["ticker"] for s in analysis["ranked_stocks"]], key="adv_report_select")
         rep_data = reports.get(selected_ticker, {})
-        
-        col_rep_text, col_rep_chart = st.columns([1.1, 0.9])
-        with col_rep_text:
-            st.caption(f"Fonte da Análise: {rep_data.get('source', 'Motor Quantamental')}")
-            st.markdown(rep_data.get("content", "Relatório não disponível."))
+        st.markdown(rep_data.get("content", "Relatório não disponível."))
 
-        with col_rep_chart:
-            st.markdown(f"#### 📈 Gráfico com Níveis de Entrada, Alvo e Stop ({selected_ticker})")
-            try:
-                ticker_yf = selected_item["symbol"]
-                df_hist = yf.Ticker(ticker_yf).history(period="6mo")
-                if not df_hist.empty:
-                    prices = selected_item["price_levels"]
-                    fig_cand = go.Figure()
-                    fig_cand.add_trace(go.Candlestick(
-                        x=df_hist.index,
-                        open=df_hist['Open'],
-                        high=df_hist['High'],
-                        low=df_hist['Low'],
-                        close=df_hist['Close'],
-                        name='Cotação'
-                    ))
-                    fig_cand.add_hline(y=prices["target_price"], line_dash="dot", line_color="green", annotation_text=f"Alvo R$ {prices['target_price']:.2f}")
-                    fig_cand.add_hline(y=prices["stop_loss_price"], line_dash="dot", line_color="red", annotation_text=f"Stop R$ {prices['stop_loss_price']:.2f}")
-                    fig_cand.update_layout(xaxis_rangeslider_visible=False, height=450, margin=dict(t=20, b=20, l=20, r=20), template="plotly_white")
-                    st.plotly_chart(fig_cand, use_container_width=True)
-            except Exception as e:
-                st.info(f"Visualização gráfica simplificada para {selected_ticker}.")
-
-    # ----------------------------------------------------
-    # ABA 8: PASSO A PASSO NO ITAÚ
-    # ----------------------------------------------------
     with tab_guide:
-        st.subheader("Como executar suas ordens com segurança no Itaú")
-        st.markdown("""
-        Como o seu objetivo é manter o controle das suas decisões e aplicar pelo banco Itaú, siga este checklist simples:
+        st.subheader(f"📱 Como Executar Suas Ordens com Segurança ({broker_info['broker_name']})")
+        st.info(f"**Corretagem:** {broker_info['brokerage_fee']} | **Menu no App:** `{broker_info['app_menu_path']}`")
+        for idx, stp in enumerate(broker_info["step_by_step"], 1):
+            st.markdown(f"**{idx}.** {stp}")
 
-        ### 📲 1. Acesso à Área de Renda Variável
-        - Você pode utilizar o app principal do **Itaú** (aba *Investir > Renda Variável*) ou o aplicativo especializado **Íon Itaú**.
-        - Ambos possuem corretagem zero para ações e custódia gratuita.
-
-        ### 🛒 2. Lote Padrão vs. Lote Fracionário
-        - Na B3, as ações são negociadas em lotes de **100 em 100** (ex: `BBAS3`, `ITUB4`).
-        - Para frações (ex: 85 ações ou 130 ações), adiciona-se a letra **F** no final (ex: `BBAS3F`, `ITUB4F`).
-        - O app **Íon Itaú** já calcula isso de forma 100% automática!
-
-        ### 🎯 3. Tipos de Ordens Recomendadas
-        1. **Ordem de Compra (Limitada):** Insira o preço limite indicado na coluna **Faixa de Entrada**.
-        2. **Ordem de Venda com Alvo (Gain):** Quando a ação bater no **Preço-Alvo**, realize o lucro.
-        3. **Stop Loss (Alarme / Proteção):** Se a ação atingir o **Stop Loss**, encerre para proteger o patrimônio.
-        """)
+render_cvm_footer()
